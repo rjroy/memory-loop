@@ -160,8 +160,9 @@ async function ready() {
 
 async function ownedNodeNext(rootPid: number, serverEnv: NodeJS.ProcessEnv) {
   const runnerExecutable = await realpath(process.execPath);
-  // A PATH entry can be a version-manager shim; ask the selected Node for its actual executable.
-  const probe = spawnSync('node', ['-p', 'process.execPath'], { cwd: fixture, env: serverEnv, encoding: 'utf8', timeout: 5000, maxBuffer: 16 * 1024 });
+  // Match the launcher's Bun package-script environment, including its PATH
+  // modifications and project directory, when resolving version-manager shims.
+  const probe = spawnSync('bun', ['--no-env-file', 'run', '--cwd', join(fixture, 'project'), 'node', '-p', 'process.execPath'], { cwd: fixture, env: serverEnv, encoding: 'utf8', timeout: 5000, maxBuffer: 16 * 1024 });
   const selectedNode = probe.stdout?.trim();
   if (probe.error || probe.status !== 0 || !selectedNode || !isAbsolute(selectedNode)) throw new Error(`Fixture Node probe failed: ${probe.error?.message ?? probe.stderr}`);
   const pathNode = await realpath(selectedNode);
@@ -185,7 +186,7 @@ async function ownedNodeNext(rootPid: number, serverEnv: NodeJS.ProcessEnv) {
       const nextCommandMatched = /next-server|next\/dist\/bin\/next/.test(args);
       result.executableMatched ||= executableMatched;
       result.nextCommandMatched ||= nextCommandMatched;
-      result.owned ||= executableMatched && nextCommandMatched;
+      result.owned ||= pid !== rootPid && executableMatched && nextCommandMatched;
       for (const child of children.trim().split(/\s+/)) if (/^\d+$/.test(child)) pending.push(Number(child));
     } catch (error: unknown) {
       if (!(typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT')) throw error;

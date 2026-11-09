@@ -1,5 +1,6 @@
 import { isVaultId, parseVaultSearchRequest, parseVaultSearchContextRequest, vaultSearchBodyLimit, vaultErrors, type VaultId } from '../../backend/contract';
 import type { BffDependencies } from './vault-bff';
+import { safeError } from '../server/logger';
 import { allowsWebRequest } from './request-policy';
 
 const headers = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' };
@@ -93,6 +94,7 @@ export async function handleSearchRequest(request: Request, dependencies: BffDep
   const requestId = crypto.randomUUID();
   dependencies.log('vault_bff_attempt', { requestId, operation });
   let result: Response;
+  let diagnostic: ReturnType<typeof safeError> | undefined;
   try {
     if (!allowsWebRequest(request)) result = failure('forbidden');
     else if (request.method !== 'POST') result = failure('method_not_allowed');
@@ -139,7 +141,7 @@ export async function handleSearchRequest(request: Request, dependencies: BffDep
             throw new Error('Invalid request');
           };
           result = await Promise.race([work(), timeout, aborted]);
-        } catch { result = failure('search_unavailable'); }
+        } catch (error) { diagnostic = safeError(error, 'search_upstream_failure'); result = failure('search_unavailable'); }
         finally {
           accepting = false;
           if (!done) { controller.abort(); if (upstream?.body && !upstream.body.locked) void upstream.body.cancel().catch(() => {}); }
@@ -148,7 +150,7 @@ export async function handleSearchRequest(request: Request, dependencies: BffDep
         }
       }
     }
-  } catch { result = failure('search_unavailable'); }
-  dependencies.log('vault_bff_outcome', { requestId, operation, status: result.status });
+  } catch (error) { diagnostic = safeError(error, 'search_request_failure'); result = failure('search_unavailable'); }
+  dependencies.log('vault_bff_outcome', { requestId, operation, status: result.status, ...(result.status >= 500 ? diagnostic ?? { category: 'search_upstream_response_failure' } : {}) });
   return result;
 }

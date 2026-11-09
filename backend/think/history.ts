@@ -1,3 +1,4 @@
+import { serverLogger } from '../../src/server/logger';
 import { createHash } from 'node:crypto';
 import type { MessageListOutput, SessionMessageInfo } from '@opencode/client';
 import type { BodyRef, BodyStore } from './body-store';
@@ -40,7 +41,7 @@ export async function projectNativeMessage(conversationId: string, message: Sess
       } catch {
         result.missing.push(key);
         if (previous?.kind === 'assistant-text') result.entries.push({ ...previous, capture: 'incomplete' });
-        console.info('think_content_outcome', { status: 'unavailable' });
+        serverLogger.log('think_content_outcome', { status: 'unavailable' });
       }
     } else if (part.type === 'tool') {
       const category: ToolCategory = part.name === 'read' ? 'file-read' : ['write', 'edit'].includes(part.name) ? 'file-write'

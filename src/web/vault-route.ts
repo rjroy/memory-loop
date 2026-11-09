@@ -1,3 +1,4 @@
+import { safeError, serverLogger } from '../server/logger';
 import 'server-only';
 import { isAbsolute } from 'node:path';
 import { loadTransport } from '../../backend/transport';
@@ -13,9 +14,9 @@ export async function vaultRoute(request: Request): Promise<Response> {
     if (!file || !isAbsolute(file)) throw new Error('Transport selector is unavailable');
     const transport = await loadTransport(file);
     loading = false;
-    return await handleVaultRequest(request, { transport, fetch: (target, init) => new URL(String(target)).pathname === '/api/vault/content' ? daemonContentFetch(target, init) : new URL(String(target)).pathname === '/api/vault/attachments' && init?.method === 'POST' ? daemonUploadFetch(target, init) : daemonFetch(target, init), log: (event, details) => console.info(event, details) });
-  } catch {
-    console.info('vault_bff_configuration_outcome', { status: 'unavailable' });
+    return await handleVaultRequest(request, { transport, fetch: (target, init) => new URL(String(target)).pathname === '/api/vault/content' ? daemonContentFetch(target, init) : new URL(String(target)).pathname === '/api/vault/attachments' && init?.method === 'POST' ? daemonUploadFetch(target, init) : daemonFetch(target, init), log: (event, details) => serverLogger.log(event, details) });
+  } catch (cause) {
+    serverLogger.warning('vault_bff_configuration_outcome', { operation: 'load_transport', status: 'unavailable', ...safeError(cause, 'transport_configuration_failure') });
     const path = new URL(request.url).pathname;
     const search = loading && (path === '/api/vault/search' || path === '/api/vault/search/context');
     const error = search ? { code: 'search_unavailable', message: vaultErrors.search_unavailable.message } : { code: 'service_unavailable', message: 'Vault service unavailable' };

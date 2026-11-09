@@ -902,6 +902,51 @@ describe('daemon-owned Think conversation creation', () => {
     } finally { await f.service.close(); }
   });
 
+  it('logs a native transport failure with a safe code and no private error text', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const f = setup();
+    try {
+      await f.service.create(a);
+      await waitForCalls(f.calls, 1);
+      f.calls[0]?.result.reject(Object.assign(new Error('private native payload'), { code: 'ECONNREFUSED' }));
+      await vi.waitFor(() => expect(errors).toHaveBeenCalledWith('think_native_outcome', expect.objectContaining({
+        operation: 'create', outcome: 'failed', code: 'ECONNREFUSED',
+      })));
+      expect(JSON.stringify(errors.mock.calls)).not.toContain('private native payload');
+    } finally { await f.service.close(); errors.mockRestore(); }
+  });
+
+  it('reports an owned native deadline without treating service shutdown as a timeout', async () => {
+    const warnings = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const f = setup();
+    try {
+      vi.useFakeTimers();
+      await f.service.create(a);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(f.calls).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(await f.service.command(a.conversationId, a.clientCommandId)).toMatchObject({ state: 'upstream-unconfirmed' });
+      const entries = [...warnings.mock.calls, ...errors.mock.calls];
+      expect(entries).toContainEqual(['think_native_outcome', expect.objectContaining({
+        operation: 'create', code: 'ETIMEDOUT', level: expect.stringMatching(/^(warning|error)$/),
+      })]);
+      expect(JSON.stringify(entries)).not.toContain('owned call aborted');
+    } finally { await f.service.close(); vi.useRealTimers(); warnings.mockRestore(); errors.mockRestore(); }
+
+    const cancellationWarnings = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const cancellationErrors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const cancelled = setup();
+    try {
+      await cancelled.service.create(b);
+      await waitForCalls(cancelled.calls, 1);
+      await cancelled.service.close();
+      const cancelledEntries = [...cancellationWarnings.mock.calls, ...cancellationErrors.mock.calls];
+      expect(JSON.stringify(cancelledEntries)).not.toContain('ETIMEDOUT');
+      expect(cancelledEntries).not.toContainEqual(['think_native_outcome', expect.objectContaining({ operation: 'create' })]);
+    } finally { await cancelled.service.close(); cancellationWarnings.mockRestore(); cancellationErrors.mockRestore(); }
+  });
+
   it('does not adopt a native session for an unknown application conversation', async () => {
     const f = setup();
     try {

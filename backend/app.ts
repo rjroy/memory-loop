@@ -1,3 +1,4 @@
+import { safeError, serverLogger } from '../src/server/logger';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
@@ -29,6 +30,7 @@ export interface AppOptions {
   /** Registry-only capabilities remain usable without an authorized native attachment. */
   conversations?: ConversationService;
   watchPolicy?: { leaseMs: number; heartbeatMs: number };
+  log?: typeof serverLogger.log;
 }
 
 function publicError(code: VaultErrorCode): Response {
@@ -76,6 +78,7 @@ async function jsonInput(request: Request, limit: number): Promise<unknown> {
 }
 
 export function createApp(options: AppOptions): (request: Request) => Promise<Response> {
+  const log = options.log ?? serverLogger.log;
   const watchPolicy = options.watchPolicy ?? { leaseMs: 300000, heartbeatMs: 15000 };
   if (!Number.isSafeInteger(watchPolicy.leaseMs) || watchPolicy.leaseMs < 1 || !Number.isSafeInteger(watchPolicy.heartbeatMs) || watchPolicy.heartbeatMs < 1) throw new Error('Invalid watch policy');
   if (!options.serviceToken || !/^[a-f0-9]{64}$/.test(options.serviceToken)) throw new Error('Service credential unavailable');
@@ -85,7 +88,7 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
     const requestId = randomUUID();
     const path = context.req.path;
     const operation = path === '/api/vault/search' || path === '/api/vault/search/context' ? 'search' : path === '/api/vault/tree' ? 'tree' : path === '/api/vault/directory' ? 'directory' : path === '/api/vault/note' ? 'note' : path === '/api/vault/file' ? 'file' : path === '/api/vault/content' ? 'content' : path === '/api/vault/attachments' ? 'attachments' : path === '/api/vault/actions' ? 'actions' : path === '/api/capture' ? 'capture' : path.startsWith('/api/think/') ? 'think' : 'other';
-    console.info('vault_api_attempt', { requestId, operation });
+    log('vault_api_attempt', { requestId, operation });
     try {
       const headers = context.req.raw.headers;
       if (headers.get('host') !== options.authority || headers.has('origin') ||
@@ -101,12 +104,13 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
           context.res = Response.json({ error: { code: 'method_not_allowed', message: 'Method is not allowed' } }, { status: 405 });
         } else await next();
       }
-    } catch {
+    } catch (error) {
+      serverLogger.error('vault_api_failure', { requestId, operation, ...safeError(error, 'request_handler_failure') });
       context.res = operation === 'think' ? thinkError('think_unavailable') : publicError(operation === 'search' ? 'search_unavailable' : path === '/api/vault/actions' && context.req.method === 'POST' ? 'file_action_uncertain' : path === '/api/vault/note' && context.req.method === 'POST' ? 'note_save_uncertain' : 'vault_unavailable');
     }
     context.header('Cache-Control', 'no-store');
     context.header('X-Content-Type-Options', 'nosniff');
-    console.info('vault_api_outcome', { requestId, operation, status: context.res.status });
+    log('vault_api_outcome', { requestId, operation, status: context.res.status, ...(context.res.status >= 500 ? { category: 'service_response_failure' } : {}) });
   });
   app.post('/api/capture', async context => {
     const input = parseCaptureRequest(await jsonInput(context.req.raw, captureBodyLimit));
@@ -125,12 +129,12 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
   ] as const) {
     app.get(`/api/ground/${path}`, async context => {
       if (new URL(context.req.url).search) return Response.json({ error: { code: 'invalid_request', message: 'Invalid Ground request' } }, { status: 400 });
-      console.info('ground_read_attempt', { resource: path });
+      serverLogger.log('ground_read_attempt', { resource: path });
       let result;
       try { result = options.ground ? kind === 'captures' ? await options.ground.captures() : await options.ground.resource(kind) : { state: 'unavailable' as const, reason: options.groundError ?? 'configuration' }; }
       catch { result = { state: 'unavailable' as const, reason: 'io' as const }; }
       if (kind === 'prompts' || kind === 'inspiration') options.groundDemand?.(kind === 'prompts' ? 'questions' : 'quotes');
-      console.info('ground_read_outcome', { resource: path, state: result.state });
+      serverLogger.log('ground_read_outcome', { resource: path, state: result.state });
       return Response.json(result, { status: result.state === 'unavailable' ? 503 : 200 });
     });
   }
@@ -139,14 +143,14 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
     const viewToken = context.req.header('X-Memory-Loop-View');
     if (viewToken !== undefined && !validViewToken(viewToken)) return thinkError('invalid_request');
     const service = options.conversations ?? options.think;
-    console.info('ground_read_attempt', { resource: 'recent-conversations' });
+    serverLogger.log('ground_read_attempt', { resource: 'recent-conversations' });
     try {
       if (!service || 'error' in service) throw new Error('Registry unavailable');
       const result = await service.recentConversations(viewToken);
-      console.info('ground_read_outcome', { resource: 'recent-conversations', state: result.state });
+      serverLogger.log('ground_read_outcome', { resource: 'recent-conversations', state: result.state });
       return context.json(result);
     } catch {
-      console.info('ground_read_outcome', { resource: 'recent-conversations', state: 'unavailable' });
+      serverLogger.log('ground_read_outcome', { resource: 'recent-conversations', state: 'unavailable' });
       return context.json({ state: 'unavailable' }, 503);
     }
   });
@@ -206,13 +210,13 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
     if (!input) return publicError('invalid_request');
     if ('error' in options.vault) return publicError('search_unavailable');
     const started = performance.now();
-    console.info('vault_search_attempt', { mode: input.mode, queryLength: input.query.replace(/\s/gu, '').length });
+    serverLogger.log('vault_search_attempt', { mode: input.mode, queryLength: input.query.replace(/\s/gu, '').length });
     try {
       const result = await options.vault.reader.search(input, context.req.raw.signal);
-      console.info('vault_search_outcome', { mode: input.mode, durationMs: performance.now() - started, counts: result.counts, coverage: result.coverage, limited: result.limited });
+      serverLogger.log('vault_search_outcome', { mode: input.mode, durationMs: performance.now() - started, counts: result.counts, coverage: result.coverage, limited: result.limited });
       return context.json(result);
     } catch (error) {
-      console.info('vault_search_outcome', { mode: input.mode, durationMs: performance.now() - started, status: 'unavailable' });
+      serverLogger.log('vault_search_outcome', { mode: input.mode, durationMs: performance.now() - started, status: 'unavailable' });
       const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
       return publicError(code === 'invalid_request' ? code : 'search_unavailable');
     }
@@ -223,15 +227,15 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
     if (!input) return publicError('invalid_request');
     if ('error' in options.vault) return publicError('search_unavailable');
     const started = performance.now();
-    console.info('vault_search_context_attempt', { queryLength: input.query.replace(/\s/gu, '').length });
+    serverLogger.log('vault_search_context_attempt', { queryLength: input.query.replace(/\s/gu, '').length });
     try {
       const result = await options.vault.reader.searchContext(input, context.req.raw.signal);
-      console.info('vault_search_context_outcome', { durationMs: performance.now() - started, status: 'loaded', truncated: result.truncated });
+      serverLogger.log('vault_search_context_outcome', { durationMs: performance.now() - started, status: 'loaded', truncated: result.truncated });
       return context.json(result);
     } catch (error) {
       const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
       const failure = code === 'search_context_changed' || code === 'invalid_request' ? code : 'search_unavailable';
-      console.info('vault_search_context_outcome', { durationMs: performance.now() - started, status: failure });
+      serverLogger.log('vault_search_context_outcome', { durationMs: performance.now() - started, status: failure });
       return publicError(failure);
     }
   });

@@ -1,3 +1,4 @@
+import { serverLogger } from '../src/server/logger';
 import { createHash } from 'node:crypto';
 import type { GroundGenerationConfig } from './ground-generation-config';
 import { failedGenerationPreflight, generationOccurrenceId, reserveGenerationPreflight,
@@ -56,7 +57,7 @@ export function createGroundGeneration(options: {
     const current = new AbortController(); controller = current;
     let observeAgain = false; let retryAt: number | null = null;
     work = (async () => {
-      console.info('ground_generation_attempt', { job });
+      serverLogger.log('ground_generation_attempt', { job });
       await options.publisher?.cleanup(current.signal); check();
       const pending = options.state.pending(job);
       if (pending) {
@@ -65,7 +66,7 @@ export function createGroundGeneration(options: {
         // authorize reconstructing changed excerpts or replaying a session-create request.
         if (!pending.dispatchAttempted) {
           options.state.abandonUndispatched(pending.attemptId);
-          console.info('ground_generation_outcome', { job, attemptId: pending.attemptId, status: 'not_dispatched' });
+          serverLogger.log('ground_generation_outcome', { job, attemptId: pending.attemptId, status: 'not_dispatched' });
           check();
         } else {
           observeAgain = true;
@@ -75,13 +76,13 @@ export function createGroundGeneration(options: {
             if (observed.admitted && pending.state !== 'admitted') options.state.admitted(pending.attemptId);
             if (observed.complete && options.publisher) publication = await options.publisher.complete(pending, observed.candidate, current.signal);
             else {
-              console.info('ground_generation_outcome', { job, attemptId: pending.attemptId,
+              serverLogger.log('ground_generation_outcome', { job, attemptId: pending.attemptId,
                 status: observed.complete ? 'publication_pending' : observed.admitted ? 'admitted' : 'uncertain' });
               return;
             }
           }
           check(); observeAgain = publication === 'pending';
-          console.info('ground_generation_outcome', { job, attemptId: pending.attemptId, status: publication });
+          serverLogger.log('ground_generation_outcome', { job, attemptId: pending.attemptId, status: publication });
           if (observeAgain || publication === 'failed') return;
           // A recovered terminal occurrence releases the reservation for the demanded period below.
         }
@@ -122,12 +123,12 @@ export function createGroundGeneration(options: {
       options.state.attempted(attempt.attemptId);
       await options.native.prompt(attempt, text, current.signal); check();
       options.state.admitted(attempt.attemptId);
-      console.info('ground_generation_outcome', { job, attemptId: attempt.attemptId, status: 'admitted' });
+      serverLogger.log('ground_generation_outcome', { job, attemptId: attempt.attemptId, status: 'admitted' });
     })().catch(error => {
       // An attempted effect stays uncertain; neither a lost ACK nor an empty history is
       // proof of non-admission. Reads may retry, but create/prompt never redispatch here.
       if (error instanceof GroundGenerationError && error.code !== 'unavailable') observeAgain = false;
-      if (!closed) console.info('ground_generation_outcome', { job, status: error instanceof GroundGenerationError ? error.code : 'unavailable_or_uncertain' });
+      if (!closed) serverLogger.warning('ground_generation_outcome', { job, operation: 'generation', status: error instanceof GroundGenerationError ? error.code : 'unavailable_or_uncertain', category: 'generation_failure' });
     }).finally(() => {
       work = undefined; controller = undefined; activePeriod = undefined;
       const queued = queuedPeriod; queuedPeriod = undefined;

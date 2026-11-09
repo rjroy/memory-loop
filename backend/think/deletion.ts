@@ -1,3 +1,4 @@
+import { serverLogger } from '../../src/server/logger';
 import type { CommandReceipt, DeleteConversationCommand, DeleteReceipt } from './contract';
 import type { RegisteredConversation, ThinkStateStore } from './state';
 import { ThinkStateError } from './state';
@@ -65,7 +66,7 @@ export function createDeletionService(options: DeletionOptions) {
       options.fence?.(target);
       const stopping = () => closed || controller.signal.aborted;
       const check = () => { open(); if (stopping()) throw new ThinkServiceError('think_unavailable'); };
-      console.info('think_delete_attempt', { conversationId: target, clientCommandId: commandId });
+      serverLogger.log('think_delete_attempt', { conversationId: target, clientCommandId: commandId });
       try {
         await options.quiesce?.(target); check();
         // Reload every durable boundary; a failed acknowledgement may follow a committed fact.
@@ -95,31 +96,31 @@ export function createDeletionService(options: DeletionOptions) {
           }
         }
         sql(() => state.deletions.complete(commandId));
-        console.info('think_delete_outcome', { conversationId: target, clientCommandId: commandId, state: 'completed' });
+        serverLogger.log('think_delete_outcome', { conversationId: target, clientCommandId: commandId, state: 'completed' });
       } catch (error) {
         if (stopping()) return;
         const reason = error instanceof TranscriptError && error.reason === 'conflict' ||
           error instanceof ThinkServiceError && (error.code === 'command_conflict' || error.code === 'selection_conflict') ? 'conflict'
           : error instanceof ThinkServiceError && error.code === 'delete_blocked' ? 'status_unknown' : 'io_unavailable';
         try { sql(() => state.deletions.pendingReason(commandId, reason)); } catch { /* Durable intent remains; never claim completion after a write failure. */ }
-        console.info('think_delete_outcome', { conversationId: target, clientCommandId: commandId, state: 'pending', reason });
+        serverLogger.log('think_delete_outcome', { conversationId: target, clientCommandId: commandId, state: 'pending', reason });
       }
-    }).catch(() => { console.info('think_delete_outcome', { clientCommandId: commandId, state: 'pending', reason: 'io_unavailable' }); })
+    }).catch(() => { serverLogger.log('think_delete_outcome', { clientCommandId: commandId, state: 'pending', reason: 'io_unavailable' }); })
       .finally(() => { active.delete(commandId); });
     active.set(commandId, { controller, work });
   }
   function recover(after?: string): void {
     if (closed) return;
-    console.info('think_delete_recovery_attempt');
+    serverLogger.log('think_delete_recovery_attempt');
     try {
       const pending = sql(() => store().deletions.pending(options.directory, after));
       for (const record of pending) {
         options.fence?.(record.receipt.conversationId);
         if (!active.has(record.receipt.clientCommandId)) sql(() => store().deletions.pendingReason(record.receipt.clientCommandId, record.receipt.reason ?? 'status_unknown'));
       }
-      console.info('think_delete_recovery_outcome', { status: 'ready', pending: pending.length });
+      serverLogger.log('think_delete_recovery_outcome', { status: 'ready', pending: pending.length });
       if (pending.length === 32) queueMicrotask(() => recover(pending.at(-1)?.receipt.clientCommandId));
-    } catch { console.info('think_delete_recovery_outcome', { status: 'unavailable' }); }
+    } catch { serverLogger.log('think_delete_recovery_outcome', { status: 'unavailable' }); }
   }
   return {
     preparing(commandId: string) { return admitting.has(commandId); },

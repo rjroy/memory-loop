@@ -1,4 +1,5 @@
 import type { LoadedTransport } from '../../backend/transport';
+import { safeError } from '../server/logger';
 import { allowsWebRequest } from './request-policy';
 import { projectGround, type GroundRoute } from './ground-projection';
 import { projectRecentConversations, validViewToken } from './ground-conversations-projection';
@@ -44,8 +45,11 @@ async function readBounded(body: ReadableStream<Uint8Array>, limit: number): Pro
 
 export async function handleGroundRequest(request: Request, dependencies: GroundBffDependencies): Promise<Response> {
   const requestId = crypto.randomUUID();
-  dependencies.log('ground_bff_attempt', { requestId });
+  const path = new URL(request.url).pathname.slice('/api/ground/'.length);
+  const operation = isGroundRoute(path) ? path : 'unknown-route';
+  dependencies.log('ground_bff_attempt', { requestId, operation });
   let response: Response;
+  let diagnostic: ReturnType<typeof safeError> | undefined;
   try {
     const url = new URL(request.url);
     const route = url.pathname.slice('/api/ground/'.length);
@@ -69,10 +73,10 @@ export async function handleGroundRequest(request: Request, dependencies: Ground
           const value: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
           return Response.json(route === 'recent-conversations' ? projectRecentConversations(value, result.status) : projectGround(value, route, result.status), { status: result.status, headers: groundHeaders });
         };
-        response = await Promise.race([upstream(), new Promise<never>((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(new Error('timeout')); }, 5000); })]);
+        response = await Promise.race([upstream(), new Promise<never>((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' })); }, 5000); })]);
       } finally { if (timer) clearTimeout(timer); }
     }
-  } catch { response = groundFailure('service_unavailable'); }
-  dependencies.log('ground_bff_outcome', { requestId, status: response.status });
+  } catch (error) { diagnostic = safeError(error, 'upstream_or_protocol_failure'); response = groundFailure('service_unavailable'); }
+  dependencies.log('ground_bff_outcome', { requestId, operation, status: response.status, ...(response.status >= 500 ? diagnostic ?? { category: 'upstream_response_failure' } : {}) });
   return response;
 }

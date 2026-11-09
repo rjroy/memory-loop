@@ -202,9 +202,10 @@ it.skipIf(process.platform !== 'linux').each(['existing-lock', 'invalid-metadata
 it.skipIf(process.platform !== 'linux')('forwards SIGINT to the owned web child and waits for its graceful drain', async () => {
   const root = await mkdtemp(join(tmpdir(), 'memory-loop-restart-test-'));
   roots.push(root);
-  for (const dir of ['src/web', 'backend', '.memory-loop', 'node_modules/next/dist/bin']) await mkdir(join(root, dir), { recursive: true });
+  for (const dir of ['src/web', 'src/server', 'backend', '.memory-loop', 'node_modules/next/dist/bin']) await mkdir(join(root, dir), { recursive: true });
   await copyFile(join(source, 'src/web/start.ts'), join(root, 'src/web/start.ts'));
   await copyFile(join(source, 'src/web/shutdown-policy.ts'), join(root, 'src/web/shutdown-policy.ts'));
+  await copyFile(join(source, 'src/server/logger.ts'), join(root, 'src/server/logger.ts'));
   for (const name of ['transport.ts', 'safe-fs.ts', 'portable-name.ts']) await copyFile(join(source, 'backend', name), join(root, 'backend', name));
   await writeFile(join(root, '.memory-loop', 'transport.json'), JSON.stringify({ daemonOrigin: 'http://127.0.0.1:3001' }));
   await writeFile(join(root, '.memory-loop', 'service.token'), 'a'.repeat(64));

@@ -7,12 +7,13 @@ const transport: LoadedTransport = { config: { daemonOrigin: 'http://127.0.0.1:3
 const path = '/api/vault/attachments?name=owned.bin';
 function setup(fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>) {
   const fetcher = vi.fn(fetch);
+  const log = vi.fn<(event: string, details: Record<string, unknown>) => void>();
   const send = (url: string, init: RequestInit = {}) => {
     const headers = new Headers(init.headers);
     if (!headers.has('host')) headers.set('host', '127.0.0.1:3000');
-    return handleVaultRequest(new Request(`http://127.0.0.1:3000${url}`, { ...init, headers }), { transport, fetch: fetcher, log: vi.fn() });
+    return handleVaultRequest(new Request(`http://127.0.0.1:3000${url}`, { ...init, headers }), { transport, fetch: fetcher, log });
   };
-  return { fetcher, send };
+  return { fetcher, send, log };
 }
 function bodyInit(body: ReadableStream<Uint8Array>, headers: Record<string, string> = {}): RequestInit & { duplex: 'half' } {
   return { method: 'POST', headers: { 'content-type': 'application/octet-stream', ...headers }, body, duplex: 'half' };
@@ -20,6 +21,19 @@ function bodyInit(body: ReadableStream<Uint8Array>, headers: Record<string, stri
 afterEach(() => vi.useRealTimers());
 
 describe('upload Next boundary', () => {
+  it('reports an attachment limit lookup failure without exposing private details', async () => {
+    const { send, log } = setup(async () => { throw Object.assign(new Error('private upload detail'), { code: 'ECONNREFUSED' }); });
+    const response = await send('/api/vault/attachments');
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ error: { code: 'upload_unavailable' } });
+    const attempt = log.mock.calls.find(([event]) => event === 'vault_bff_attempt');
+    expect(attempt?.[1].requestId).toEqual(expect.any(String));
+    expect(log).toHaveBeenCalledWith('vault_bff_outcome', expect.objectContaining({
+      operation: 'attachments', requestId: attempt?.[1].requestId, status: 503, code: 'ECONNREFUSED', category: expect.any(String),
+    }));
+    expect(JSON.stringify(log.mock.calls)).not.toContain('private upload detail');
+    expect(JSON.stringify(log.mock.calls)).not.toContain(token);
+  });
   it('gets and projects the daemon limit via the fixed service credential', async () => {
     const { send, fetcher } = setup(async () => Response.json({ maxFileBytes: 7, private: 'discard' }));
     const response = await send('/api/vault/attachments');

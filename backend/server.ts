@@ -1,3 +1,4 @@
+import { safeError, serverLogger } from '../src/server/logger';
 import { createApp, type VaultState } from './app';
 import { loadConfig } from './config';
 import { openVault } from './vault';
@@ -48,16 +49,16 @@ const unavailableThink = (error: ThinkUnavailableCode): PreparedThink => ({ thin
 async function prepareThink(config: VaultConfig | undefined, vault: VaultState, transportFile: string, projectRoot: string, generation: GroundGenerationSettings): Promise<PreparedThink> {
   // Read-only/unconfigured applications must not acquire a private application database.
   if (config?.think === undefined) {
-    console.info('think_config_outcome', { status: 'missing' });
+    serverLogger.log('think_config_outcome', { status: 'missing' });
     return unavailableThink('think_config_missing');
   }
   const think = parseThinkConfig(config.think);
   if (!think) {
-    console.info('think_config_outcome', { status: 'invalid', field: 'configuration (including requiredVersion)' });
+    serverLogger.log('think_config_outcome', { status: 'invalid', field: 'configuration (including requiredVersion)' });
     return unavailableThink('think_config_invalid');
   }
   if ('error' in vault) return unavailableThink('think_unavailable');
-  console.info('think_setup_attempt');
+  serverLogger.log('think_setup_attempt');
   let directory: string;
   let state: Awaited<ReturnType<typeof openThinkState>>;
   try {
@@ -65,8 +66,8 @@ async function prepareThink(config: VaultConfig | undefined, vault: VaultState, 
     // Registry ownership and metadata outlive the optional native attachment descriptor.
     // The same private-root/mode/migration checks apply to both startup paths.
     state = await openThinkState(projectRoot, directory);
-  } catch {
-    console.info('think_setup_outcome', { status: 'unavailable' });
+  } catch (error) {
+    serverLogger.warning('think_setup_outcome', { operation: 'open_state', status: 'unavailable', ...safeError(error, 'state_setup_failure') });
     return unavailableThink('think_unavailable');
   }
   const epoch = randomUUID();
@@ -82,7 +83,7 @@ async function prepareThink(config: VaultConfig | undefined, vault: VaultState, 
     if ('password' in registration && typeof registration.password !== 'string') throw new Error('invalid registration');
     const versionStatus = nativeVersionStatus('version' in registration ? registration.version : undefined, think.requiredVersion);
     if (versionStatus !== 'compatible') {
-      console.info('think_native_version_outcome', { source: 'registration', status: versionStatus, requiredVersion: think.requiredVersion });
+      serverLogger.log('think_native_version_outcome', { source: 'registration', status: versionStatus, requiredVersion: think.requiredVersion });
       throw new Error('Native registration version incompatible');
     }
     // The public registered Endpoint is connection configuration, NOT proof that native is
@@ -121,11 +122,11 @@ async function prepareThink(config: VaultConfig | undefined, vault: VaultState, 
             native: groundGenerationNative({ client, directory, installationId: state.installationId,
               identity: { pid: registration.pid }, minimumVersion: think.requiredVersion, validateSelection: validateCreation }) });
           jobs.push({ job, runner });
-          console.info('ground_generation_setup_outcome', { job, state: 'prepared' });
-        } catch { console.info('ground_generation_setup_outcome', { job, state: 'unavailable' }); }
+          serverLogger.log('ground_generation_setup_outcome', { job, state: 'prepared' });
+        } catch { serverLogger.log('ground_generation_setup_outcome', { job, state: 'unavailable' }); }
       }
     }
-    console.info('think_setup_outcome', { status: 'ready' });
+    serverLogger.log('think_setup_outcome', { status: 'ready' });
     // Jobs borrow Think's private connection; drain them BEFORE Think closes it.
     let closing: Promise<void> | undefined;
     let skillSetup: Promise<void> | undefined;
@@ -142,42 +143,42 @@ async function prepareThink(config: VaultConfig | undefined, vault: VaultState, 
       return closing;
     }, startRecovery() {
       skillSetup ??= (async () => {
-        console.info('think_dashboard_skill_install_attempt');
+        serverLogger.log('think_dashboard_skill_install_attempt');
         try {
           const status = await installDashboardSkill(directory, projectRoot);
-          console.info('think_dashboard_skill_install_outcome', { status });
+          serverLogger.log('think_dashboard_skill_install_outcome', { status });
           if (status === 'conflict') return;
-          console.info('think_dashboard_skill_discovery_attempt');
+          serverLogger.log('think_dashboard_skill_discovery_attempt');
           const info = await client.server.info({ signal: AbortSignal.any([skillStop.signal, AbortSignal.timeout(5000)]) });
           if (info.pid !== registration.pid || nativeVersionStatus(info.version, think.requiredVersion) !== 'compatible') throw new Error('Native identity unavailable');
           for (let attempt = 0; attempt < 10; attempt++) {
             const skills = await client.skill.list({ location: { directory } }, { signal: AbortSignal.any([skillStop.signal, AbortSignal.timeout(5000)]) });
             if (skills.data.some(skill => skill.id === 'memory-loop-dashboard-setup' && skill.path === join(directory, '.opencode', 'skills', 'memory-loop-dashboard-setup', 'SKILL.md'))) {
-              console.info('think_dashboard_skill_discovery_outcome', { status: 'discovered' });
+              serverLogger.log('think_dashboard_skill_discovery_outcome', { status: 'discovered' });
               return;
             }
             await new Promise<void>(resolve => setTimeout(resolve, 250));
             if (skillStop.signal.aborted) return;
           }
-          console.info('think_dashboard_skill_discovery_outcome', { status: 'unavailable' });
-        } catch { console.info('think_dashboard_skill_setup_outcome', { status: 'unavailable' }); }
+          serverLogger.log('think_dashboard_skill_discovery_outcome', { status: 'unavailable' });
+        } catch { serverLogger.log('think_dashboard_skill_setup_outcome', { status: 'unavailable' }); }
       })();
       service.startRecovery();
       for (const { job, runner } of jobs) {
-        try { runner.start(); } catch { console.info('ground_generation_setup_outcome', { job, state: 'unavailable' }); }
+        try { runner.start(); } catch { serverLogger.log('ground_generation_setup_outcome', { job, state: 'unavailable' }); }
       }
     } };
   } catch {
     if (bodies) {
       try { await bodies.close(); }
-      catch { console.info('think_body_cleanup_outcome', { status: 'failed' }); }
+      catch { serverLogger.log('think_body_cleanup_outcome', { status: 'failed' }); }
     }
     // No native adapter/body store is fabricated for this path. List, leases and
     // controlled unavailable Resume receipts use exactly the normal registry capability.
     const conversations = createConversationService({ state, directory, epoch });
-    if (generation.state === 'ready') console.info('ground_generation_setup_outcome', { state: 'unavailable' });
+    if (generation.state === 'ready') serverLogger.log('ground_generation_setup_outcome', { state: 'unavailable' });
     let closing: Promise<void> | undefined;
-    console.info('think_setup_outcome', { status: 'registry-only' });
+    serverLogger.log('think_setup_outcome', { status: 'registry-only' });
     return { think: { error: 'think_unavailable' }, conversations, startRecovery: () => conversations.startRecovery(), close() {
       closing ??= (async () => { try { await conversations.close(); } finally { state.close(); } })();
       return closing;
@@ -199,22 +200,23 @@ export async function prepareServer(options: ServerOptions): Promise<PreparedSer
     const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
     vault = { error: code === 'config_missing' || code === 'config_invalid' ? code : 'vault_unavailable' };
   }
-  if (config) console.info('ground_generation_config_attempt');
+  if (config) serverLogger.log('ground_generation_config_attempt');
   const generation = parseGroundGenerationConfig(config?.ground);
   if (config) {
-    console.info('ground_generation_config_outcome', { state: generation.state });
+    if (generation.state === 'invalid') serverLogger.warning('ground_generation_config_outcome', { operation: 'configuration', state: generation.state, category: 'invalid_generation_configuration' });
+    else serverLogger.info('ground_generation_config_outcome', { state: generation.state });
   }
   const preparedThink = await prepareThink(config, vault, transportFile, options.projectRoot, generation);
   let capture: CaptureWriter | undefined;
   let ground: GroundReader | undefined;
   let groundError: 'configuration' | 'io' = 'error' in vault && vault.error === 'vault_unavailable' ? 'io' : 'configuration';
   if (config && 'reader' in vault) {
-    console.info('capture_setup_attempt');
-    try { capture = await openCaptureWriter(config.vaultDirectory); console.info('capture_setup_outcome', { status: 'ready' }); }
-    catch { console.info('capture_setup_outcome', { status: 'unavailable' }); }
-    console.info('ground_setup_attempt');
-    try { ground = await openGround(config.vaultDirectory, config.ground); console.info('ground_setup_outcome', { status: 'ready' }); }
-    catch { groundError = 'io'; console.info('ground_setup_outcome', { status: 'unavailable' }); }
+    serverLogger.log('capture_setup_attempt');
+    try { capture = await openCaptureWriter(config.vaultDirectory); serverLogger.log('capture_setup_outcome', { status: 'ready' }); }
+    catch (error) { serverLogger.warning('capture_setup_outcome', { operation: 'open_capture', status: 'unavailable', ...safeError(error, 'capture_setup_failure') }); }
+    serverLogger.log('ground_setup_attempt');
+    try { ground = await openGround(config.vaultDirectory, config.ground); serverLogger.log('ground_setup_outcome', { status: 'ready' }); }
+    catch (error) { groundError = 'io'; serverLogger.warning('ground_setup_outcome', { operation: 'open_ground', status: 'unavailable', ...safeError(error, 'ground_setup_failure') }); }
   }
   let closing: Promise<void> | undefined;
   function close(): Promise<void> {

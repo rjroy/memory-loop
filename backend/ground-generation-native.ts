@@ -1,3 +1,4 @@
+import { serverLogger } from '../src/server/logger';
 import type { OpenCodeClient, SessionInfo } from '@opencode/client';
 import { ClientError, isConflictError, isServiceUnavailableError } from '@opencode/client';
 import type { GenerationAttempt, GenerationSelection } from './ground-generation-state';
@@ -28,17 +29,19 @@ export function groundGenerationNative(options: {
   const minimumVersion = options.minimumVersion ?? defaultNativeMinimum;
   if (!validNativeVersion(minimumVersion)) throw new GroundGenerationError('configuration');
   async function call<T>(operation: string, signal: AbortSignal, action: (signal: AbortSignal) => Promise<T>): Promise<T> {
-    console.info('ground_generation_native_attempt', { operation });
+    serverLogger.log('ground_generation_native_attempt', { operation });
     try {
       if (signal.aborted) throw new Error('generation stopped');
       const result = await action(AbortSignal.any([signal, AbortSignal.timeout(10000)]));
       if (signal.aborted) throw new Error('generation stopped');
-      console.info('ground_generation_native_outcome', { operation, status: 'ready' }); return result;
+      serverLogger.log('ground_generation_native_outcome', { operation, status: 'ready' }); return result;
     } catch (error) {
       const failure = error instanceof GroundGenerationError ? error : new GroundGenerationError(
         isServiceUnavailableError(error) || error instanceof ClientError && error.reason === 'Transport' || error instanceof Error && ['AbortError', 'TimeoutError'].includes(error.name)
           ? 'unavailable' : isConflictError(error) ? 'conflict' : 'configuration');
-      console.info('ground_generation_native_outcome', { operation, status: failure.code }); throw failure;
+      if (signal.aborted) serverLogger.verbose('ground_generation_native_outcome', { operation, status: 'aborted' });
+      else serverLogger.warning('ground_generation_native_outcome', { operation, status: failure.code, category: 'native_generation_failure' });
+      throw failure;
     }
   }
   async function identity(signal: AbortSignal): Promise<void> {
@@ -46,7 +49,7 @@ export function groundGenerationNative(options: {
     if (info.pid !== options.identity.pid) throw new GroundGenerationError('conflict');
     const versionStatus = nativeVersionStatus(info.version, minimumVersion);
     if (versionStatus !== 'compatible') {
-      console.info('ground_generation_native_version_outcome', { status: versionStatus, requiredVersion: minimumVersion });
+      serverLogger.log('ground_generation_native_version_outcome', { status: versionStatus, requiredVersion: minimumVersion });
       throw new GroundGenerationError('configuration');
     }
   }

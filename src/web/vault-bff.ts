@@ -1,4 +1,5 @@
 import type { LoadedTransport } from '../../backend/transport';
+import { safeError } from '../server/logger';
 import { hardUploadMaxBytes, isUploadName, isVaultComponent, isVaultDirectoryId, isVaultErrorCode, isVaultId, parseVaultSaveRequest, parseVaultAction, vaultActionBodyLimit, vaultErrors, vaultSaveBodyLimit, type VaultEntry, type VaultDirectoryEntry, type VaultDirectoryResponse, type VaultId, type VaultErrorCode } from '../../backend/contract';
 import { allowsWebRequest } from './request-policy';
 import { handleSearchRequest } from './vault-search-bff';
@@ -67,6 +68,7 @@ async function attachmentRequest(request: Request, dependencies: BffDependencies
   const operation = 'attachments';
   log('vault_bff_attempt', { requestId, operation });
   let result: Response;
+  let diagnostic: ReturnType<typeof safeError> | undefined;
   let complete = false;
   let tooLarge = false;
   let empty = false;
@@ -150,7 +152,7 @@ async function attachmentRequest(request: Request, dependencies: BffDependencies
         }
       }
     }
-  } catch { controller.abort(); result = failure(empty ? 'invalid_request' : tooLarge ? 'upload_too_large' : dispatched && complete ? 'upload_uncertain' : 'upload_unavailable'); }
+  } catch (error) { diagnostic = safeError(error, 'upload_upstream_failure'); controller.abort(); result = failure(empty ? 'invalid_request' : tooLarge ? 'upload_too_large' : dispatched && complete ? 'upload_uncertain' : 'upload_unavailable'); }
   finally {
     accepting = false;
     deadline.close();
@@ -160,7 +162,7 @@ async function attachmentRequest(request: Request, dependencies: BffDependencies
       source.releaseLock();
     }
   }
-  log('vault_bff_outcome', { requestId, operation, status: result.status });
+  log('vault_bff_outcome', { requestId, operation, status: result.status, ...(result.status >= 500 ? diagnostic ?? { category: 'upload_upstream_response_failure' } : {}) });
   return result;
 }
 
@@ -169,6 +171,7 @@ async function fileRequest(request: Request, dependencies: BffDependencies, oper
   const requestId = crypto.randomUUID();
   log('vault_bff_attempt', { requestId, operation });
   let response: Response;
+  let diagnostic: ReturnType<typeof safeError> | undefined;
   try {
     const url = new URL(request.url);
     const content = operation === 'content';
@@ -236,7 +239,7 @@ async function fileRequest(request: Request, dependencies: BffDependencies, oper
                     const result = await (deadline ? deadline.wait(next) : next);
                     if (result.done) { cleanup(); reader.releaseLock(); output.close(); }
                     else { if (result.value.byteLength) deadline?.arm(60_000); output.enqueue(result.value); }
-                  } catch (error) { cleanup(); void reader.cancel(error).catch(() => {}).finally(() => reader.releaseLock()); output.error(error); }
+                  } catch (error) { if (!request.signal.aborted) log('vault_bff_stream_outcome', { requestId, operation, status: 503, ...safeError(error, 'content_stream_failure') }); cleanup(); void reader.cancel(error).catch(() => {}).finally(() => reader.releaseLock()); output.error(error); }
                 },
                 async cancel(reason) {
                   cleanup();
@@ -293,8 +296,8 @@ async function fileRequest(request: Request, dependencies: BffDependencies, oper
         }
       }
     }
-  } catch { response = failure('service_unavailable'); }
-  log('vault_bff_outcome', { requestId, operation, status: response.status });
+  } catch (error) { diagnostic = safeError(error, 'file_upstream_failure'); response = failure('service_unavailable'); }
+  log('vault_bff_outcome', { requestId, operation, status: response.status, ...(response.status >= 500 ? diagnostic ?? { category: 'file_upstream_response_failure' } : {}) });
   return response;
 }
 function project(value: unknown, operation: 'tree' | 'note') {
@@ -355,6 +358,7 @@ export async function handleVaultRequest(request: Request, dependencies: BffDepe
   log('vault_bff_attempt', { requestId, operation });
   let response: Response;
   let dispatched = false;
+  let diagnostic: ReturnType<typeof safeError> | undefined;
   const saving = operation === 'note' && request.method === 'POST';
   const acting = operation === 'actions' && request.method === 'POST';
   const mutating = saving || acting;
@@ -394,7 +398,7 @@ export async function handleVaultRequest(request: Request, dependencies: BffDepe
         let timer: ReturnType<typeof setTimeout> | undefined;
         try {
           const timeout = new Promise<never>((_, reject) => {
-            timer = setTimeout(() => { controller.abort(); reject(new Error('timeout')); }, 5000);
+            timer = setTimeout(() => { controller.abort(); reject(Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' })); }, 5000);
           });
           const upstream = async () => {
             dispatched = mutating;
@@ -432,7 +436,7 @@ export async function handleVaultRequest(request: Request, dependencies: BffDepe
         } finally { if (timer !== undefined) clearTimeout(timer); }
       }
     }
-  } catch { response = failure(dispatched ? acting ? 'file_action_uncertain' : 'note_save_uncertain' : 'service_unavailable'); }
-  log('vault_bff_outcome', { requestId, operation, status: response.status });
+  } catch (error) { diagnostic = safeError(error, 'upstream_or_protocol_failure'); response = failure(dispatched ? acting ? 'file_action_uncertain' : 'note_save_uncertain' : 'service_unavailable'); }
+  log('vault_bff_outcome', { requestId, operation, status: response.status, ...(response.status >= 500 ? diagnostic ?? { category: 'upstream_response_failure' } : {}) });
   return response;
 }

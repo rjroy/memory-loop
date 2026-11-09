@@ -1,5 +1,6 @@
 import { captureBodyLimit, captureErrors, isCaptureResponse, parseCaptureRequest } from '../../backend/capture-contract';
 import type { LoadedTransport } from '../../backend/transport';
+import { safeError } from '../server/logger';
 import { allowsWebRequest } from './request-policy';
 
 export interface CaptureBffDependencies {
@@ -44,9 +45,10 @@ async function bounded(body: ReadableStream<Uint8Array>, limit: number): Promise
 
 export async function handleCaptureRequest(request: Request, dependencies: CaptureBffDependencies): Promise<Response> {
   const requestId = crypto.randomUUID();
-  dependencies.log('capture_bff_attempt', { requestId });
+  dependencies.log('capture_bff_attempt', { requestId, operation: 'capture' });
   let response: Response;
   let dispatched = false;
+  let diagnostic: ReturnType<typeof safeError> | undefined;
   try {
     const url = new URL(request.url);
     if (!allowsWebRequest(request)) response = failure('forbidden');
@@ -82,10 +84,10 @@ export async function handleCaptureRequest(request: Request, dependencies: Captu
           }
           throw new Error('unrecognized response');
         };
-        response = await Promise.race([upstream(), new Promise<never>((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(new Error('timeout')); }, 5000); })]);
+        response = await Promise.race([upstream(), new Promise<never>((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' })); }, 5000); })]);
       } finally { if (timer) clearTimeout(timer); }
     }
-  } catch { response = failure(dispatched ? 'capture_uncertain' : 'capture_unavailable'); }
-  dependencies.log('capture_bff_outcome', { requestId, status: response.status });
+  } catch (error) { diagnostic = safeError(error, 'upstream_or_protocol_failure'); response = failure(dispatched ? 'capture_uncertain' : 'capture_unavailable'); }
+  dependencies.log('capture_bff_outcome', { requestId, operation: 'capture', status: response.status, ...(response.status >= 500 ? diagnostic ?? { category: 'upstream_response_failure' } : {}) });
   return response;
 }

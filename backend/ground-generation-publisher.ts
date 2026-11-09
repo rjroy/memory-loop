@@ -1,3 +1,4 @@
+import { serverLogger } from '../src/server/logger';
 import { constants, type BigIntStats } from 'node:fs';
 import { link, lstat, mkdir, open, realpath, rename, unlink } from 'node:fs/promises';
 import { isVaultComponent } from './contract';
@@ -205,7 +206,7 @@ export function createQuotePublisher(options: PublisherOptions): GroundQuestionP
 function createGenerationPublisher(options: PublisherOptions & { job: GenerationJob }): GroundQuestionPublisher {
   const io = options.io ?? questionPublicationIO; const state = options.state;
   const check = (signal: AbortSignal) => { if (signal.aborted) throw new Error('publication stopped'); };
-  const log = (attemptId: string, status: string, operation: string) => console.info('ground_generation_publication', { job: options.job, attemptId, operation, status });
+  const log = (attemptId: string, status: string, operation: string) => serverLogger.log('ground_generation_publication', { job: options.job, attemptId, operation, status });
   async function withNamespace<T>(plan: Pick<QuestionPublicationPlan, 'noteId' | 'directories'>, signal: AbortSignal, create: boolean, action: (ns: QuestionNamespace) => Promise<T>): Promise<T> {
     const ns = new QuestionNamespace(options.directory, plan.noteId, io, signal);
     try { await ns.prepare(plan.directories, create); return await action(ns); } finally { await ns.close(); }

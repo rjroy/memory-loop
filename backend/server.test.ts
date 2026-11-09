@@ -104,7 +104,7 @@ it.each([
 it.each([
   ['2.2.1', undefined], ['2.2.2-rc.1', undefined], ['2.2.2', '2.2.5'], ['not-a-version', undefined],
 ] as const)('refuses native version %s below minimum %s without creating a session', async (version, minimum) => {
-  const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
   const fixturePassword = 'fixture-only-password';
   const auth = `Basic ${Buffer.from(`opencode:${fixturePassword}`).toString('base64')}`;
   const nativeCalls: string[] = [];
@@ -148,14 +148,14 @@ it.each([
     body: JSON.stringify({ conversationId: '11111111-1111-4111-8111-111111111111', clientCommandId: '22222222-2222-4222-8222-222222222222' }) });
   expect(response.status).toBe(503);
   expect(await response.json()).toMatchObject({ error: { code: 'think_unavailable' } });
-  expect(info).toHaveBeenCalledWith('think_native_version_outcome', { source: 'registration',
-    status: version === 'not-a-version' ? 'invalid' : 'below_minimum', requiredVersion: minimum ?? '2.2.2' });
+  expect(warning).toHaveBeenCalledWith('think_native_version_outcome', expect.objectContaining({ source: 'registration', level: 'warning',
+    status: version === 'not-a-version' ? 'invalid' : 'below_minimum', requiredVersion: minimum ?? '2.2.2' }));
   expect(nativeCalls).not.toContain('POST /api/session');
   expect(created).toEqual([]);
 });
 
 it.each(['not-a-version', '2.2', '2.2.2-01'])('reports an actionable error for invalid configured minimum %s', async minimum => {
-  const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
   const request = await (async () => {
     await writeFile(join(projectRoot, '.memory-loop', 'config.json'), JSON.stringify({ vaultDirectory: vault,
       think: { service: { registrationFile: join(fixture, 'service.json'), requiredVersion: minimum }, location: { kind: 'vault' } } }));
@@ -166,7 +166,7 @@ it.each(['not-a-version', '2.2', '2.2.2-01'])('reports an actionable error for i
   expect(response.status).toBe(503);
   const body = await response.json();
   expect(body).toMatchObject({ error: { code: 'think_config_invalid' } });
-  expect(`${JSON.stringify(body)} ${JSON.stringify(info.mock.calls)}`).toMatch(/(?:requiredVersion|minimum.version)/i);
+  expect(`${JSON.stringify(body)} ${JSON.stringify(warning.mock.calls)}`).toMatch(/(?:requiredVersion|minimum.version)/i);
 });
 
 it.each([

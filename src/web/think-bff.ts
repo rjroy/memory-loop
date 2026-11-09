@@ -5,6 +5,7 @@ import { parseContentRequest } from '../../backend/think/content-transfer';
 import { thinkErrors } from '../../backend/think/contract';
 import { classifyThinkJsonRoute } from './think-json-route';
 import { projectView, validConversationId, validViewToken } from './ground-conversations-projection';
+import { safeError } from '../server/logger';
 
 type Method = 'GET' | 'POST';
 export interface ThinkBffDependencies {
@@ -150,11 +151,13 @@ function validNewCommand(bytes: Uint8Array, operation: 'views' | 'selection' | '
 
 export async function handleThinkRequest(request: Request, dependencies: ThinkBffDependencies): Promise<Response> {
   const requestId = crypto.randomUUID();
-  dependencies.log('think_bff_attempt', { requestId });
+  const route = classifyThinkJsonRoute(new URL(request.url), request.method);
+  const operation = route?.operation ?? 'unknown-route';
+  dependencies.log('think_bff_attempt', { requestId, operation });
   let response: Response;
+  let diagnostic: ReturnType<typeof safeError> | undefined;
   try {
     const url = new URL(request.url);
-    const route = classifyThinkJsonRoute(url, request.method);
     const content = request.method === 'GET' && route?.operation === 'content';
     if (!allowsWebRequest(request)) response = failure('forbidden');
     else if (!route) response = failure('not_found');
@@ -200,10 +203,10 @@ export async function handleThinkRequest(request: Request, dependencies: ThinkBf
           }
           return failure('service_unavailable');
         };
-        response = await Promise.race([upstream(), new Promise<never>((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(new Error('timeout')); }, 5000); })]);
+        response = await Promise.race([upstream(), new Promise<never>((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' })); }, 5000); })]);
       } finally { if (timer) clearTimeout(timer); }
     }
-  } catch { response = failure('service_unavailable'); }
-  dependencies.log('think_bff_outcome', { requestId, status: response.status });
+  } catch (error) { diagnostic = safeError(error, 'upstream_or_protocol_failure'); response = failure('service_unavailable'); }
+  dependencies.log('think_bff_outcome', { requestId, operation, status: response.status, ...(response.status >= 500 ? diagnostic ?? { category: 'upstream_response_failure' } : {}) });
   return response;
 }

@@ -1,6 +1,7 @@
 import type { LoadedTransport } from '../../backend/transport';
 import { allowsWebRequest } from './request-policy';
 import { projectConversation } from './think-projection';
+import { safeError, serverLogger } from '../server/logger';
 
 const route = /^\/api\/think\/conversations\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/events$/;
 const safeHeaders = { 'cache-control': 'no-store, no-transform', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' };
@@ -15,6 +16,7 @@ export async function handleThinkWatch(request: Request, dependencies: {
   const match = route.exec(url.pathname);
   if (!match || url.search || url.hash) return fail(404, 'not_found', 'Think resource not found');
   if (request.method !== 'GET') return fail(405, 'method_not_allowed', 'Method is not allowed');
+  const requestId = crypto.randomUUID();
   const origin = new URL(dependencies.transport.config.daemonOrigin);
   if (origin.origin !== dependencies.transport.config.daemonOrigin || origin.protocol !== 'http:' || origin.hostname !== '127.0.0.1' || origin.username || origin.password || !/^[a-f0-9]{64}$/.test(dependencies.transport.serviceToken)) return fail(503, 'service_unavailable', 'Think service unavailable');
   const abort = new AbortController();
@@ -24,8 +26,9 @@ export async function handleThinkWatch(request: Request, dependencies: {
   if (request.signal.aborted) abort.abort();
   let upstream: Response;
   try { upstream = await dependencies.fetch(new URL(url.pathname, origin), dependencies.transport.serviceToken, abort.signal); }
-  catch { request.signal.removeEventListener('abort', onAbort); abort.abort(); return fail(503, 'service_unavailable', 'Think service unavailable'); }
+  catch (error) { if (!request.signal.aborted) serverLogger.error('think_watch_outcome', { operation: 'connect', requestId, conversationId: match[1], ...safeError(error, 'watch_connection_failure') }); request.signal.removeEventListener('abort', onAbort); abort.abort(); return fail(503, 'service_unavailable', 'Think service unavailable'); }
   if (upstream.status !== 200 || !/^text\/event-stream(?:\s*;|\s*$)/i.test(upstream.headers.get('content-type') ?? '') || !upstream.body) {
+    serverLogger.error('think_watch_outcome', { operation: 'connect', requestId, conversationId: match[1], status: upstream.status, category: 'invalid_watch_response' });
     request.signal.removeEventListener('abort', onAbort); abort.abort(); return fail(503, 'service_unavailable', 'Think service unavailable');
   }
   const reader = upstream.body.getReader();
@@ -89,7 +92,7 @@ export async function handleThinkWatch(request: Request, dependencies: {
           buffer += decoder.decode(item.value, { stream: true });
         }
         controller.close();
-      } catch { cleanup(); controller.error(new Error('watch unavailable')); }
+      } catch (error) { if (!request.signal.aborted) serverLogger.error('think_watch_outcome', { operation: 'read', requestId, conversationId: match[1], ...safeError(error, 'watch_stream_failure') }); cleanup(); controller.error(new Error('watch unavailable')); }
     },
     cancel() { cleanup(); },
   }, { highWaterMark: 1 });

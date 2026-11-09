@@ -8,12 +8,29 @@ import type { GroundGenerationConfig } from './ground-generation-config';
 import type { GroundGenerationState } from './ground-generation-state';
 import type { GroundGenerationPreflight } from './ground-generation-state';
 import type { GroundGenerationNative } from './ground-generation-native';
+import { groundGenerationNative } from './ground-generation-native';
+import { GroundGenerationError } from './ground-generation-error';
+import type { OpenCodeClient } from '@opencode/client';
 
 const now = Date.parse('2032-04-17T10:23:00.000Z');
 const config: GroundGenerationConfig = { timeZone: 'UTC', questions: { schedule: '0 10 * * *', count: 2 },
   quotes: { schedule: '0 11 * * 1', count: 1 }, context: { lookbackDays: 3, maxNotes: 1, maxNoteBytes: 1024, maxTotalBytes: 2048 } };
 let root = '';
 afterEach(async () => { vi.useRealTimers(); if (root) await rm(root, { recursive: true, force: true }); root = ''; });
+
+it.each(['configuration', 'conflict'] as const)('retains native selection %s at warning severity without private details', async code => {
+  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  const client = { server: { info: vi.fn(async () => ({ pid: 123, version: '2.2.2' })) } } as unknown as OpenCodeClient;
+  const native = groundGenerationNative({ client, directory: '/fixture/vault', installationId: 'fixture-installation', identity: { pid: 123 },
+    validateSelection: async () => { throw new GroundGenerationError(code); } });
+  try {
+    await expect(native.validate(new AbortController().signal)).rejects.toMatchObject({ code });
+    expect(warning).toHaveBeenCalledWith('ground_generation_native_outcome', expect.objectContaining({
+      level: 'warning', operation: 'selection', status: code,
+    }));
+    expect(JSON.stringify(warning.mock.calls)).not.toContain('/fixture/vault');
+  } finally { warning.mockRestore(); }
+});
 
 it.each([
   ['before spring transition', '2026-03-07T12:00:00.000Z', '2026-03-07T00:00:00.000Z'],

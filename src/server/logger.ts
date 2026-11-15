@@ -18,6 +18,8 @@ export function safeError(error: unknown, category: string): { code?: string; ca
 function severity(event: string, details: Details): Level {
   const status = details.status ?? details.outcome ?? details.state;
   if (typeof status === 'number' && status >= 500 || status === 'failed') return 'error';
+  if (event === 'think_bff_outcome' && details.operation === 'content' && typeof status === 'number' && status >= 400) return 'warning';
+  if (event === 'think_content_outcome' && typeof status === 'number' && status >= 400) return 'warning';
   if (event === 'think_state_write_outcome' && status === 'unavailable') return 'error';
   if (status === 'unavailable' || status === 'invalid' || status === 'below_minimum' || status === 'retrying' || status === 'pending' || status === 'registry-only') return 'warning';
   if (/^(ground_read|think_hydration|think_transcript)_(attempt|outcome)$/.test(event)) return 'verbose';

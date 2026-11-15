@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { ThinkStateError, type StoredTranscript, type StoredTranscriptEntry, type TranscriptAppendIdentity, type TranscriptStateStore } from './state';
 import { OwnedTranscriptFile, TranscriptError, TranscriptNamespace, type TranscriptBytes, type TranscriptIO } from './transcript-file';
 import { transcriptEntryIdentity, type TranscriptEntry } from './transcript-format';
+import { serverLogger } from '../../src/server/logger';
 
 /** One registered transcript: SQLite owns recovery bytes; the existing file writer owns safe append I/O. */
 export class RegisteredTranscript {
@@ -10,6 +11,8 @@ export class RegisteredTranscript {
   private file?: OwnedTranscriptFile;
   private source?: TranscriptBytes;
   private mappedNamespace?: TranscriptNamespace;
+  private identityAttempted = false;
+  private identityOutcome?: string;
 
   constructor(private readonly store: TranscriptStateStore, private readonly vault: string,
     private readonly conversationId: string, private readonly defaults: TranscriptNamespace, private readonly io?: TranscriptIO) {}
@@ -39,6 +42,18 @@ export class RegisteredTranscript {
   entry(id: string): StoredTranscriptEntry | null { return this.storage(() => this.store.entry(this.conversationId, id)); }
   latest(semantic: string): StoredTranscriptEntry | null { return this.storage(() => this.store.latest(this.conversationId, semantic)); }
   get noteId(): string[] | undefined { return this.record ? [...this.record.noteId] : undefined; }
+  private identityAttempt(): void {
+    if (this.identityAttempted) return;
+    this.identityAttempted = true;
+    this.identityOutcome = undefined;
+    serverLogger.log('think_transcript_identity_attempt', { conversationId: this.conversationId, reason: 'device_changed' });
+  }
+  private identityResult(status: 'recovered' | 'conflict' | 'unavailable', reason?: string): void {
+    const key = `${status}:${reason ?? ''}`;
+    if (this.identityOutcome === key) return;
+    this.identityOutcome = key;
+    serverLogger.log('think_transcript_identity_outcome', { conversationId: this.conversationId, status, ...(reason ? { reason } : {}) });
+  }
 
   private async namespace(): Promise<TranscriptNamespace> {
     const record = this.load();
@@ -52,7 +67,12 @@ export class RegisteredTranscript {
     }
     await namespace.prepare(false);
     await namespace.validate();
-    if (JSON.stringify(namespace.identities()) !== JSON.stringify(record.namespace)) throw new TranscriptError('conflict');
+    const current = namespace.identities();
+    if (JSON.stringify(current) !== JSON.stringify(record.namespace)) {
+      if (current.length !== record.namespace.length || current.some((node, index) => node.ino !== record.namespace[index].ino)) throw new TranscriptError('conflict', 'inode_mismatch');
+      this.identityAttempt();
+      if (!record.file || record.file.offset === 0) throw new TranscriptError('conflict', 'content_mismatch');
+    }
     return namespace;
   }
   private async ownedFile(): Promise<OwnedTranscriptFile> {
@@ -61,6 +81,15 @@ export class RegisteredTranscript {
     if (!record) throw new TranscriptError('io_unavailable');
     if (!this.file) this.file = new OwnedTranscriptFile(namespace, `think-${this.conversationId}.md`, {
       ...(record.file ? { checkpoint: record.file } : {}),
+      namespaceChanged: JSON.stringify(namespace.identities()) !== JSON.stringify(record.namespace),
+      deviceChanged: () => this.identityAttempt(),
+      reconcile: checkpoint => {
+        if (!this.store.reconcileIdentity) throw new TranscriptError('io_unavailable');
+        this.storage(() => this.store.reconcileIdentity?.(record, namespace.identities(), checkpoint));
+        this.reload();
+        this.identityResult('recovered');
+        this.identityAttempted = false;
+      },
       acquired: checkpoint => {
         this.storage(() => this.store.acquire(this.conversationId, checkpoint));
         this.reload();
@@ -106,11 +135,17 @@ export class RegisteredTranscript {
   }
   /** No native history is needed to finish a ready append or verify its confirmed prefix. */
   async recover(stopping: () => boolean): Promise<StoredTranscript | null> {
-    const record = this.load();
-    if (!record) return null;
-    if (record.pending?.state === 'ready') await this.finish(stopping);
-    else if (record.file && !this.file) await (await this.ownedFile()).checkpoint(stopping);
-    return this.load();
+    try {
+      const record = this.load();
+      if (!record) return null;
+      if (record.pending?.state === 'ready') await this.finish(stopping);
+      else if (record.file && !this.file) await (await this.ownedFile()).checkpoint(stopping);
+      return this.load();
+    } catch (error) {
+      if (this.identityAttempted && !stopping()) this.identityResult(error instanceof TranscriptError && error.reason === 'conflict' ? 'conflict' : 'unavailable',
+        error instanceof TranscriptError ? error.detail ?? error.reason : 'io_unavailable');
+      throw error;
+    }
   }
   async append(source: TranscriptBytes, createdAt: number, entry: TranscriptEntry | null, stopping: () => boolean): Promise<void> {
     if (stopping()) throw new TranscriptError('io_unavailable');

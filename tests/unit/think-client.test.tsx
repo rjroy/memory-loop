@@ -81,6 +81,18 @@ describe('Think browser protocol client', () => {
     expect(url.startsWith(`/api/think/conversations/${conversationId}/content/${contentId}?`)).toBe(true);
   });
 
+  it.each(['http', 'identity', 'invalid-id'] as const)('retains only validated request correlation on %s content failures', async failure => {
+    const requestId = failure === 'invalid-id' ? 'private-invalid-request-id' : runId;
+    const body = failure === 'http' ? { error: { code: 'not_found' } } : { ...chunk, contentId: runId };
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(body), {
+      status: failure === 'http' ? 404 : 200,
+      headers: { 'content-type': 'application/json', 'x-memory-loop-request-id': requestId },
+    }));
+    const error = await createThinkClient({ fetch: fetcher }).chunk(ref, 0).catch((caught: unknown) => caught);
+    expect(error).toMatchObject(failure === 'http' ? { kind: 'api', status: 404, requestId: runId } :
+      { kind: 'invalid-response', contentReason: 'identity', requestId: failure === 'identity' ? runId : undefined });
+  });
+
   it.each([
     { ...chunk, transfer: runId }, { ...chunk, epoch: runId }, { ...chunk, offset: 1 },
     { ...chunk, bytes: 'not base64!' }, { ...chunk, bytes: btoa('x'.repeat(65537)), nextOffset: 65537 },

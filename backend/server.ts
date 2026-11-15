@@ -72,9 +72,12 @@ async function prepareThink(config: VaultConfig | undefined, vault: VaultState, 
   }
   const epoch = randomUUID();
   let bodies: BodyStore | undefined;
+  let setupOperation = 'read_registration';
   try {
     // The registration is explicitly selected by the operator, never discovered from HOME.
-    const registration: unknown = JSON.parse(await readFile(think.registrationFile, 'utf8'));
+    const registrationData = await readFile(think.registrationFile, 'utf8');
+    setupOperation = 'validate_registration';
+    const registration: unknown = JSON.parse(registrationData);
     if (!registration || typeof registration !== 'object' || !('url' in registration) || typeof registration.url !== 'string' ||
         !('pid' in registration) || typeof registration.pid !== 'number' || !Number.isSafeInteger(registration.pid) || registration.pid < 1) throw new Error('invalid registration');
     const url = new URL(registration.url);
@@ -105,7 +108,9 @@ async function prepareThink(config: VaultConfig | undefined, vault: VaultState, 
         if (!selected || (think.model.variant !== undefined && !selected.variants.some(variant => variant.id === think.model?.variant))) throw new Error('selected model unavailable');
       }
     };
+    setupOperation = 'open_body_store';
     bodies = await createBodyStore({ directory: join(dirname(transportFile), `think-bodies-${epoch}`), epoch, vaultDirectory: directory });
+    setupOperation = 'create_service';
     const service = createThinkService({ native: nativeSessions(client), bodies, state, context: { directory, ...(think.agent ? { agent: think.agent } : {}), ...(think.model ? { model: think.model } : {}) }, epoch,
       serviceIdentity: { pid: registration.pid }, minimumVersion: think.requiredVersion, validateCreation, transcript: { directory: think.transcriptDirectory } });
     const jobs: Array<{ job: 'questions' | 'quotes'; runner: ReturnType<typeof createGroundGeneration> }> = [];
@@ -123,7 +128,7 @@ async function prepareThink(config: VaultConfig | undefined, vault: VaultState, 
               identity: { pid: registration.pid }, minimumVersion: think.requiredVersion, validateSelection: validateCreation }) });
           jobs.push({ job, runner });
           serverLogger.log('ground_generation_setup_outcome', { job, state: 'prepared' });
-        } catch { serverLogger.log('ground_generation_setup_outcome', { job, state: 'unavailable' }); }
+        } catch (error) { serverLogger.log('ground_generation_setup_outcome', { job, state: 'unavailable', ...safeError(error, 'generation_setup_failure') }); }
       }
     }
     serverLogger.log('think_setup_outcome', { status: 'ready' });
@@ -161,24 +166,24 @@ async function prepareThink(config: VaultConfig | undefined, vault: VaultState, 
             if (skillStop.signal.aborted) return;
           }
           serverLogger.log('think_dashboard_skill_discovery_outcome', { status: 'unavailable' });
-        } catch { serverLogger.log('think_dashboard_skill_setup_outcome', { status: 'unavailable' }); }
+        } catch (error) { if (!skillStop.signal.aborted) serverLogger.log('think_dashboard_skill_setup_outcome', { status: 'unavailable', ...safeError(error, 'skill_setup_failure') }); }
       })();
       service.startRecovery();
       for (const { job, runner } of jobs) {
-        try { runner.start(); } catch { serverLogger.log('ground_generation_setup_outcome', { job, state: 'unavailable' }); }
+        try { runner.start(); } catch (error) { serverLogger.log('ground_generation_setup_outcome', { job, state: 'unavailable', ...safeError(error, 'generation_start_failure') }); }
       }
     } };
-  } catch {
+  } catch (error) {
     if (bodies) {
       try { await bodies.close(); }
-      catch { serverLogger.log('think_body_cleanup_outcome', { status: 'failed' }); }
+      catch (cleanupError) { serverLogger.log('think_body_cleanup_outcome', { status: 'failed', ...safeError(cleanupError, 'body_cleanup_failure') }); }
     }
     // No native adapter/body store is fabricated for this path. List, leases and
     // controlled unavailable Resume receipts use exactly the normal registry capability.
     const conversations = createConversationService({ state, directory, epoch });
     if (generation.state === 'ready') serverLogger.log('ground_generation_setup_outcome', { state: 'unavailable' });
     let closing: Promise<void> | undefined;
-    serverLogger.log('think_setup_outcome', { status: 'registry-only' });
+    serverLogger.log('think_setup_outcome', { status: 'registry-only', operation: setupOperation, ...safeError(error, 'native_setup_failure') });
     return { think: { error: 'think_unavailable' }, conversations, startRecovery: () => conversations.startRecovery(), close() {
       closing ??= (async () => { try { await conversations.close(); } finally { state.close(); } })();
       return closing;

@@ -10,7 +10,7 @@ import { safeError } from '../server/logger';
 type Method = 'GET' | 'POST';
 export interface ThinkBffDependencies {
   transport: LoadedTransport;
-  fetch: (target: URL, options: { method: Method; token: string; body?: Uint8Array; signal: AbortSignal; viewToken?: string }) => Promise<Response>;
+  fetch: (target: URL, options: { method: Method; token: string; body?: Uint8Array; signal: AbortSignal; viewToken?: string; requestId?: string }) => Promise<Response>;
   log: (event: string, details: Record<string, unknown>) => void;
 }
 
@@ -30,6 +30,9 @@ function failure(code: keyof typeof errors): Response {
 }
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+class ContentProjectionError extends Error {
+  constructor(readonly reason: 'identity' | 'offset' | 'response') { super('invalid content response'); }
 }
 async function boundedBytes(body: ReadableStream<Uint8Array>, limit: number): Promise<Uint8Array> {
   const reader = body.getReader();
@@ -64,11 +67,15 @@ function project(value: unknown, method: Method, path: string, query: URLSearchP
   const segments = path.slice(base.length).split('/').filter(Boolean);
   if (method === 'GET' && segments[1] === 'content') {
     const input = parseContentRequest(segments[0], segments[2], query);
-    if (!input || !record(value) || value.conversationId !== input.conversationId || value.contentId !== input.contentId || value.generation !== input.generation || value.through !== input.through || value.offset !== input.offset ||
+    if (!input || !record(value)) throw new ContentProjectionError('response');
+    if (value.conversationId !== input.conversationId || value.contentId !== input.contentId || value.generation !== input.generation || value.through !== input.through ||
         typeof value.epoch !== 'string' || !new RegExp(`^${uuid}$`).test(value.epoch) || typeof value.transfer !== 'string' || !new RegExp(`^${uuid}$`).test(value.transfer) ||
-        (input.transfer !== undefined && value.transfer !== input.transfer) || typeof value.bytes !== 'string' || value.bytes.length > 87384 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value.bytes)) throw new Error('invalid content chunk');
+        (input.transfer !== undefined && value.transfer !== input.transfer)) throw new ContentProjectionError('identity');
+    if (value.offset !== input.offset) throw new ContentProjectionError('offset');
+    if (typeof value.bytes !== 'string' || value.bytes.length > 87384 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value.bytes)) throw new ContentProjectionError('response');
     const bytes = Buffer.from(value.bytes, 'base64');
-    if (bytes.toString('base64') !== value.bytes || bytes.length > 65536 || value.nextOffset !== input.offset + bytes.length || input.offset + bytes.length > input.through || (input.offset < input.through && bytes.length === 0)) throw new Error('invalid content bounds');
+    if (bytes.toString('base64') !== value.bytes || bytes.length > 65536) throw new ContentProjectionError('response');
+    if (value.nextOffset !== input.offset + bytes.length || input.offset + bytes.length > input.through || (input.offset < input.through && bytes.length === 0)) throw new ContentProjectionError('offset');
     return { conversationId: input.conversationId, epoch: value.epoch, contentId: input.contentId, generation: input.generation, through: input.through, offset: input.offset, bytes: value.bytes, nextOffset: value.nextOffset, transfer: value.transfer };
   }
   if (segments[1] === 'decisions' && method === 'GET') {
@@ -153,11 +160,19 @@ export async function handleThinkRequest(request: Request, dependencies: ThinkBf
   const requestId = crypto.randomUUID();
   const route = classifyThinkJsonRoute(new URL(request.url), request.method);
   const operation = route?.operation ?? 'unknown-route';
-  dependencies.log('think_bff_attempt', { requestId, operation });
+  const url = new URL(request.url);
+  const segments = url.pathname.slice(base.length).split('/').filter(Boolean);
+  const contentInput = operation === 'content' ? parseContentRequest(segments[0], segments[2], url.searchParams) : null;
+  const correlation = contentInput ? { conversationId: contentInput.conversationId, contentId: contentInput.contentId, generation: contentInput.generation } : {};
+  // Content can span many chunks. The session logs one attempt per body; the BFF
+  // records failed chunk boundaries only, rather than logging every chunk.
+  if (operation !== 'content') dependencies.log('think_bff_attempt', { requestId, operation });
   let response: Response;
   let diagnostic: ReturnType<typeof safeError> | undefined;
+  let reason: 'transport' | 'http' | 'identity' | 'offset' | 'response' | undefined;
+  let upstreamStatus: number | undefined;
+  let stage: 'transport' | 'response' = 'response';
   try {
-    const url = new URL(request.url);
     const content = request.method === 'GET' && route?.operation === 'content';
     if (!allowsWebRequest(request)) response = failure('forbidden');
     else if (!route) response = failure('not_found');
@@ -177,7 +192,11 @@ export async function handleThinkRequest(request: Request, dependencies: ThinkBf
       try {
         const upstream = async () => {
           const viewToken = route.operation === 'selection' && route.method === 'GET' ? request.headers.get('x-memory-loop-view') : null;
-          const result = await dependencies.fetch(new URL(`${url.pathname}${url.search}`, origin), { method: route.method, token: dependencies.transport.serviceToken, body, signal: controller.signal, ...(viewToken === null ? {} : { viewToken }) });
+          stage = 'transport';
+          const result = await dependencies.fetch(new URL(`${url.pathname}${url.search}`, origin), { method: route.method, token: dependencies.transport.serviceToken, body, signal: controller.signal, ...(content ? { requestId } : {}), ...(viewToken === null ? {} : { viewToken }) });
+          stage = 'response';
+          upstreamStatus = result.status;
+          if (content && result.status !== 200) reason = 'http';
           if (!/^application\/json(?:\s*;|\s*$)/i.test(result.headers.get('content-type') ?? '')) throw new Error('invalid content type');
           if (!result.body) throw new Error('missing response');
           const data: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await boundedBytes(result.body, content ? 131072 : 65536)));
@@ -206,7 +225,10 @@ export async function handleThinkRequest(request: Request, dependencies: ThinkBf
         response = await Promise.race([upstream(), new Promise<never>((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' })); }, 5000); })]);
       } finally { if (timer) clearTimeout(timer); }
     }
-  } catch (error) { diagnostic = safeError(error, 'upstream_or_protocol_failure'); response = failure('service_unavailable'); }
-  dependencies.log('think_bff_outcome', { requestId, operation, status: response.status, ...(response.status >= 500 ? diagnostic ?? { category: 'upstream_response_failure' } : {}) });
+  } catch (error) { diagnostic = safeError(error, 'upstream_or_protocol_failure'); if (operation === 'content') reason = error instanceof ContentProjectionError ? error.reason : reason ?? (diagnostic.code === 'ETIMEDOUT' ? 'transport' : stage); response = failure('service_unavailable'); }
+  if (operation !== 'content' || response.status >= 400) dependencies.log('think_bff_outcome', { requestId, operation, ...correlation, status: response.status,
+    ...(reason ? { reason, ...(reason === 'http' && upstreamStatus !== undefined ? { upstreamStatus } : {}) } : {}),
+    ...(response.status >= 500 ? diagnostic ?? { category: 'upstream_response_failure' } : {}) });
+  if (operation === 'content') response.headers.set('x-memory-loop-request-id', requestId);
   return response;
 }

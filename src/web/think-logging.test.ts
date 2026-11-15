@@ -16,6 +16,15 @@ function fixture(level: Level) {
   return { entries, logger };
 }
 
+function expectSafeDiagnostic(value: unknown): void {
+  expect(value).not.toBeInstanceOf(Error);
+  if (value === null || typeof value !== 'object') return;
+  for (const [key, nested] of Object.entries(value)) {
+    expect(key).not.toMatch(/^(?:secret|authorization|password|token|bytes|text|sha256|message|stack|cause)$/i);
+    expectSafeDiagnostic(nested);
+  }
+}
+
 describe('Think refresh logging boundary', () => {
   it.each(['info', 'verbose'] as const)('classifies successful snapshot refresh at %s', async level => {
     const { entries, logger } = fixture(level);
@@ -52,5 +61,34 @@ describe('Think refresh logging boundary', () => {
     })]));
     expect(JSON.stringify(entries)).not.toContain(secret);
     expect(JSON.stringify(entries)).not.toContain(token);
+  });
+});
+
+describe('Think content logging boundary', () => {
+  const contentId = '22222222-2222-4222-8222-222222222222';
+  const generation = '33333333-3333-4333-8333-333333333333';
+  const contentRequest = () => new Request(`http://127.0.0.1:3000/api/think/conversations/${conversationId}/content/${contentId}?generation=${generation}&through=7&offset=0`, { headers: { host: '127.0.0.1:3000' } });
+
+  it.each(['transport', 'http', 'identity', 'offset'] as const)('reports %s failure with safe content correlation', async failure => {
+    const { entries, logger } = fixture('info');
+    const secret = 'fixture-private-content-and-password';
+    const result = await handleThinkRequest(contentRequest(), {
+      transport, log: logger.log,
+      fetch: async () => {
+        if (failure === 'transport') throw Object.assign(new Error(secret), { code: 'ECONNREFUSED' });
+        if (failure === 'http') return Response.json({ error: { code: 'service_unavailable', message: secret } }, { status: 503 });
+        return Response.json({ conversationId: failure === 'identity' ? generation : conversationId, contentId, generation, through: 7,
+          epoch: conversationId, transfer: generation, offset: failure === 'offset' ? 1 : 0,
+          nextOffset: 7, bytes: Buffer.from('fixture').toString('base64'), secret });
+      },
+    });
+    expect(result.status).toBe(503);
+    expectSafeDiagnostic(entries);
+    expect(JSON.stringify(entries)).not.toContain(secret);
+    expect(JSON.stringify(entries)).not.toContain(token);
+    expect(JSON.stringify(entries)).not.toContain(Buffer.from('fixture').toString('base64'));
+    expect(entries).toEqual(expect.arrayContaining([expect.objectContaining({ event: 'think_bff_outcome', details: expect.objectContaining({
+      operation: 'content', conversationId, contentId, requestId: expect.any(String), status: 503, reason: failure,
+    }) })]));
   });
 });

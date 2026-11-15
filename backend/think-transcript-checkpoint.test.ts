@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -8,6 +8,7 @@ import type { Checkpoint, CompletionReport, CrashReport, InitialLoadReport, Migr
 import { entryFor } from './think/transcript-format';
 import type { BodyRef } from './think/body-store';
 import type { ProjectionEntry } from './think/projection';
+import type { StoredTranscript } from './think/state';
 
 const conversationId = '11111111-1111-4111-8111-111111111111';
 const commandId = '33333333-3333-4333-8333-333333333333';
@@ -32,7 +33,7 @@ async function fileSymlinksPermitted(): Promise<boolean> {
     throw error;
   } finally { await rm(join(root, 'symlink-probe'), { force: true }); await rm(target, { force: true }); }
 }
-async function child<T>(scenario: Scenario | 'probe' | 'migrate-v1' | 'migrate-v2-order' | 'migrate-v5-generation' | 'migrate-v6-preflight' | 'reopen-v3-order' | 'cache-native-path' | 'cache-windows-slashes' | `reopen-${ReopenScenario}`, filename: string): Promise<T> {
+async function child<T>(scenario: Scenario | 'probe' | 'migrate-v1' | 'migrate-v2-order' | 'migrate-v5-generation' | 'migrate-v6-preflight' | 'reopen-v3-order' | 'cache-native-path' | 'cache-windows-slashes' | 'device-siblings' | `reopen-${ReopenScenario}`, filename: string): Promise<T> {
   const output = join(root, filename);
   const result = spawnSync('bun', ['--no-env-file', runner, root, scenario, output], {
     cwd: root, encoding: 'utf8', timeout: 15000, maxBuffer: 256 * 1024,
@@ -229,6 +230,130 @@ describe('fresh Bun process registered transcript reopening', () => {
     expect(result.lockAvailable.every(Boolean)).toBe(true);
     expect(result.health).toMatchObject({ state: 'retrying', warning: true, reason });
   }
+
+  it('recovers a verified device-only identity change and persists it for repeated fresh-process reopen', async () => {
+    const seed = await child<Report>('synced-form', 'report.json');
+    const result = await child<ReopenReport>('reopen-device-replay', 'device-reopened.json');
+    expect(result.pid).not.toBe(seed.pid);
+    healthy(result);
+    expect(result.after.checkpoint?.fileDev).not.toBe(result.before.checkpoint?.fileDev);
+    expect(result.after.checkpoint?.fileIno).toBe(result.before.checkpoint?.fileIno);
+    const actualDirectories = await Promise.all([join(root, 'vault'), join(root, 'vault', 'Conversations'), join(root, 'vault', 'Conversations', 'Memory Loop')].map(path => lstat(path, { bigint: true })));
+    expect(JSON.parse(result.after.checkpoint?.namespaceJson ?? 'null')).toEqual(actualDirectories.map(stat => ({ dev: String(stat.dev), ino: String(stat.ino) })));
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.arrayContaining(['think_transcript_identity_attempt', expect.objectContaining({ conversationId, reason: 'device_changed' })]),
+      expect.arrayContaining(['think_transcript_identity_outcome', expect.objectContaining({ conversationId, status: 'recovered' })]),
+    ]));
+    const diagnosticText = JSON.stringify(result.diagnostics);
+    expect(diagnosticText).not.toContain(root);
+    expect(diagnosticText).not.toContain('durable fixture original');
+    const markdown = Buffer.from(result.afterHex, 'hex').toString('utf8');
+    expect(markdown.startsWith(seed.markdown)).toBe(true);
+    for (const text of ['durable fixture original 🧠', 'canonical fixture answer Ω', 'fixture form answer 🧠', 'Context compacted.']) expect(markdown.split(text)).toHaveLength(2);
+    const again = await child<ReopenReport>('reopen-replay', 'device-again.json');
+    healthy(again);
+    expect(again.afterHex).toBe(result.afterHex);
+    expect(again.writes).toBe(0);
+    expect(again.after.entries).toEqual(result.after.entries);
+    expect(again.after.checkpoint).toEqual(result.after.checkpoint);
+  });
+
+  it('recovers a device-only change and a partially persisted pending append exactly once', async () => {
+    const seed = await child<Report>('partial', 'report.json');
+    pending(seed.afterClose, seed.expectedOriginal);
+    const baseline = checkpoint(seed.afterClose, 'before device recovery').confirmedOffset;
+    const existing = Buffer.from(seed.markdown).subarray(baseline);
+    const result = await child<ReopenReport>('reopen-device-recover', 'device-pending.json');
+    healthy(result);
+    expect(result.sourceReads).toBe(0);
+    expect(result.bodyReads).toBe(0);
+    expect(Buffer.from(result.afterHex, 'hex')).toEqual(Buffer.concat([Buffer.from(seed.markdown).subarray(0, baseline), Buffer.from(seed.expectedOriginal)]));
+    expect(result.writeBytes).toBe(Buffer.byteLength(seed.expectedOriginal) - existing.length);
+    expect(result.after.entries.filter(id => id === entryId)).toHaveLength(1);
+    const again = await child<ReopenReport>('reopen-verify-confirmed', 'device-pending-again.json');
+    healthy(again);
+    expect(again.afterHex).toBe(result.afterHex);
+    expect(again.writes).toBe(0);
+    expect(again.after.checkpoint).toEqual(result.after.checkpoint);
+  });
+
+  it('does not report identity failure for an ordinary append failure after successful device reconciliation', async () => {
+    const seed = await child<Report>('partial', 'report.json');
+    pending(seed.afterClose, seed.expectedOriginal);
+    const result = await child<ReopenReport>('reopen-device-append-failure', 'device-append-failure.json');
+    expect(result.appendFaultInjected, 'the append must fail after the identity CAS committed').toBe(true);
+    expect(result.after.checkpoint?.fileDev).not.toBe(result.before.checkpoint?.fileDev);
+    expect(result.health).toMatchObject({ state: 'retrying', reason: 'io_unavailable' });
+    expect(result.diagnostics).toContainEqual(expect.arrayContaining(['think_transcript_identity_outcome', expect.objectContaining({ status: 'recovered' })]));
+    expect(result.ordinaryDiagnostics).toContainEqual(expect.arrayContaining(['think_transcript_outcome', expect.objectContaining({ conversationId, outcome: 'retrying', reason: 'io_unavailable' })]));
+    expect(result.after.entries).not.toContain(entryId);
+    expect(result.afterHex).toBe(result.beforeHex);
+    expect(result.diagnostics).not.toContainEqual(expect.arrayContaining(['think_transcript_identity_outcome', expect.objectContaining({ status: 'unavailable' })]));
+    expect(result.diagnostics).not.toContainEqual(expect.arrayContaining(['think_transcript_identity_outcome', expect.objectContaining({ status: 'conflict' })]));
+  });
+
+  it('independently verifies device recovery for two transcripts sharing a namespace', async () => {
+    await child<Report>('synced', 'report.json');
+    const result = await child<{ beforeFirst: StoredTranscript; afterFirst: StoredTranscript; beforeSibling: StoredTranscript; siblingAfterFirst: StoredTranscript;
+      afterSibling: StoredTranscript; firstOutcome: string; secondOutcome: string; siblingBefore: string; siblingAfter: string }>('device-siblings', 'siblings.json');
+    expect(result.firstOutcome).toBe('recovered');
+    expect(result.afterFirst.file?.dev).not.toBe(result.beforeFirst.file?.dev);
+    expect(result.siblingAfterFirst).toEqual(result.beforeSibling);
+    expect(result.secondOutcome).toBe('recovered');
+    expect(result.afterSibling.file?.dev).not.toBe(result.beforeSibling.file?.dev);
+    expect(result.siblingAfter).toBe(result.siblingBefore);
+  });
+
+  it.each(['before', 'after'] as const)('survives an identity persistence interruption %s commit without duplicate append', async point => {
+    const seed = await child<Report>('partial', 'report.json');
+    const baseline = checkpoint(seed.afterClose, 'before interrupted identity persistence').confirmedOffset;
+    const interrupted = await child<ReopenReport>(`reopen-device-identity-${point}`, `interrupted-${point}.json`);
+    expect(interrupted.health).toMatchObject({ state: 'retrying' });
+    expect(interrupted.identityFaultInjected, `the ${point}-commit fault boundary must actually be reached`).toBe(true);
+    expect(interrupted.identityFaultEvidence).toMatchObject({ method: 'reconcileIdentity',
+      phase: point === 'before' ? 'before_commit' : 'after_commit', triggerFired: point === 'before' });
+    const old = interrupted.before.checkpoint;
+    const persisted = interrupted.after.checkpoint;
+    if (!old || !persisted) throw new Error('fixture checkpoint missing');
+    const atFault = interrupted.identityFaultEvidence?.persisted.checkpoint;
+    if (!atFault) throw new Error('identity fault did not capture durable checkpoint');
+    if (point === 'before') expect(atFault).toEqual(old);
+    else {
+      expect(atFault.fileDev).not.toBe(old.fileDev);
+      expect(atFault.namespaceJson).not.toBe(old.namespaceJson);
+      expect(atFault.fileIno).toBe(old.fileIno);
+      expect(atFault.confirmedOffset).toBe(old.confirmedOffset);
+      expect(atFault.pendingEntryId).toBe(old.pendingEntryId);
+    }
+    const oldNamespace = JSON.parse(old.namespaceJson) as Array<{ dev: string; ino: string }>;
+    const actualRoot = await lstat(join(root, 'vault'), { bigint: true });
+    const namespaceChanged = (JSON.parse(persisted.namespaceJson) as Array<{ dev: string; ino: string }>)[0].dev === String(actualRoot.dev);
+    expect(namespaceChanged).toBe(persisted.fileDev !== old.fileDev);
+    if (!namespaceChanged) expect(JSON.parse(persisted.namespaceJson)).toEqual(oldNamespace);
+    const recovered = await child<ReopenReport>('reopen-recover', `interrupted-${point}-recovered.json`);
+    healthy(recovered);
+    expect(Buffer.from(recovered.afterHex, 'hex')).toEqual(Buffer.concat([Buffer.from(seed.markdown).subarray(0, baseline), Buffer.from(seed.expectedOriginal)]));
+    expect(recovered.after.entries.filter(id => id === entryId)).toHaveLength(1);
+    const again = await child<ReopenReport>('reopen-verify-confirmed', `interrupted-${point}-again.json`);
+    healthy(again);
+    expect(again.afterHex).toBe(recovered.afterHex);
+    expect(again.writes).toBe(0);
+  });
+
+  it.for(['device-prefix-edit', 'device-truncated', 'device-symlink', 'device-wrong-tail'] as const)(
+    'does not reconcile a device mismatch when %s invalidates safe recovery', async (mode, { skip }) => {
+      if (mode === 'device-symlink' && !await fileSymlinksPermitted()) { skip(); return; }
+      await child<Report>(mode === 'device-wrong-tail' ? 'partial' : 'synced', 'report.json');
+      const result = await child<ReopenReport>(`reopen-${mode}`, 'device-conflict.json');
+      preservedFailure(result, 'conflict');
+      const reason = mode === 'device-truncated' ? 'size_mismatch' : mode === 'device-symlink' ? 'unsafe_path' : 'content_mismatch';
+      expect(result.diagnostics).toEqual(expect.arrayContaining([
+        expect.arrayContaining(['think_transcript_identity_outcome', expect.objectContaining({ conversationId, status: 'conflict', reason })]),
+      ]));
+      expect(JSON.stringify(result.diagnostics)).not.toContain(root);
+      expect(JSON.stringify(result.diagnostics)).not.toContain('durable fixture original');
+      if (mode === 'device-symlink') expect(result.fileType).toBe('symlink');
+    });
 
   it('reopens a confirmed owned checkpoint with fresh cache generations, appends a new observed fact and never duplicates old user/AI/form entries', async () => {
     const seed = await child<Report>('synced-form', 'report.json');

@@ -160,6 +160,20 @@ export class SQLiteTranscriptState implements TranscriptStateStore {
         writtenId(file.dev), writtenId(file.ino), file.fingerprint, conversationId);
     });
   }
+  reconcileIdentity(expected: StoredTranscript, namespace: TranscriptDirectoryIdentity[], file: TranscriptFileCheckpoint): void {
+    this.write(() => {
+      this.required(expected.conversationId);
+      const owner = this.db.get('SELECT vault_directory FROM conversations WHERE conversation_id = ?', expected.conversationId);
+      if (!owner) fail('conflict');
+      const current = this.load(expected.conversationId, text(owner, 'vault_directory'));
+      if (!current || JSON.stringify(current) !== JSON.stringify(expected) || !current.file || current.file.offset === 0 ||
+          current.file.ino !== writtenId(file.ino) || current.file.offset !== file.offset || current.file.sha256 !== file.sha256 ||
+          current.namespace.length !== namespace.length || current.namespace.some((node, index) => node.ino !== writtenId(namespace[index].ino))) fail('conflict');
+      const identities = namespace.map(node => ({ dev: writtenId(node.dev), ino: writtenId(node.ino) }));
+      this.db.run('UPDATE transcripts SET namespace_json = ?, file_dev = ?, file_ino = ?, file_fingerprint = ? WHERE conversation_id = ?',
+        JSON.stringify(identities), writtenId(file.dev), writtenId(file.ino), file.fingerprint, expected.conversationId);
+    });
+  }
   entry(conversationId: string, entryId: string): StoredTranscriptEntry | null {
     return this.read(() => { this.owner(conversationId); const row = this.db.get('SELECT * FROM transcript_entries WHERE conversation_id = ? AND entry_id = ?', conversationId, entryId); return row ? identity(row) : null; });
   }

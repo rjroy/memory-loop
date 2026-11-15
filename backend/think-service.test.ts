@@ -2216,6 +2216,25 @@ describe('registry-owned restart hydration fences', () => {
     } finally { await x.f.service.close(); }
   });
 
+  it('does not warn hydration unavailable when service close intentionally cancels recovery', async () => {
+    const x = restoredFixture();
+    const held = deferred<MessageListOutput>();
+    const warnings = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    x.f.listMessages.mockImplementationOnce(() => held.promise);
+    try {
+      const result = x.f.service.snapshot(a.conversationId).then(() => null, (error: unknown) => error);
+      await vi.waitFor(() => expect(x.f.listMessages).toHaveBeenCalledOnce());
+      await x.f.service.close();
+      held.resolve({ data: [], cursor: {} });
+      expect(await result).toMatchObject({ code: 'think_unavailable' });
+      expect(warnings.mock.calls.filter(([event]) => event === 'think_hydration_outcome')).toEqual([]);
+    } finally {
+      held.resolve({ data: [], cursor: {} });
+      await x.f.service.close();
+      warnings.mockRestore();
+    }
+  });
+
   it.each(['ready', 'owner-changed', 'process-changed', 'service-close'] as const)(
     'coalesces held-history requests and fences publication when %s', async change => {
       const x = restoredFixture();

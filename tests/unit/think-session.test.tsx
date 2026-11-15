@@ -61,6 +61,15 @@ function fixture(pointerValue: string | null = null, navigationGeneration?: () =
 }
 const think = (id: string) => ({ pathname: '/think', search: `?conversation=${id}` });
 
+function expectSafeDiagnostic(value: unknown): void {
+  expect(value).not.toBeInstanceOf(Error);
+  if (value === null || typeof value !== 'object') return;
+  for (const [key, nested] of Object.entries(value)) {
+    expect(key).not.toMatch(/^(?:secret|authorization|password|token|bytes|text|sha256|message|stack|cause)$/i);
+    expectSafeDiagnostic(nested);
+  }
+}
+
 /** Separately deliver view selection acknowledgements and snapshot responses. */
 function delayedView() {
   let desired: string | null = null;
@@ -494,6 +503,33 @@ describe('Think session content and decision ownership', () => {
   };
   const withBody = (ref: BodyRef, revision = 1): ThinkSnapshot => snapshot(a, { revision, entries: [{ kind: 'assistant-text', displayOrder: 1, messageId: 'msg_fixture', ordinal: 0, body: ref, closure: 'closed', capture: 'complete' }] });
   const content = (f: ReturnType<typeof fixture>) => f.session.getPresentation().state.messages[0]?.parts[0]?.content;
+
+  it.each(['transport', 'http', 'identity', 'digest'] as const)('logs a safe, correlated content-load %s failure while preserving unavailable state', async failure => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const f = fixture();
+    const secret = 'private fixture body and credential';
+    const ref = makeRef('expected', '77777777-7777-4777-8777-777777777777');
+    vi.mocked(f.client.snapshot).mockResolvedValue(withBody(ref));
+    vi.mocked(f.client.chunk).mockImplementation(async () => {
+      if (failure === 'transport') throw Object.assign(new ThinkClientError('transport'), { secret });
+      if (failure === 'http') throw Object.assign(new ThinkClientError('api', 503, 'service_unavailable'), { secret });
+      return { conversationId: failure === 'identity' ? b : a, epoch, contentId: ref.contentId, generation: ref.generation,
+        through: ref.through, offset: 0, bytes: Buffer.from('mismatch').toString('base64'), nextOffset: ref.through, transfer };
+    });
+    try {
+      f.session.setLocation(think(a));
+      await waitFor(() => expect(content(f)).toMatchObject({ state: 'error', reason: 'unavailable' }));
+      expectSafeDiagnostic(log.mock.calls);
+      expect(JSON.stringify(log.mock.calls)).not.toContain(secret);
+      expect(JSON.stringify(log.mock.calls)).not.toContain('mismatch');
+      if (ref.kind === 'canonical') expect(JSON.stringify(log.mock.calls)).not.toContain(ref.sha256);
+      expect(log).toHaveBeenCalledWith('think_content_load_outcome', expect.objectContaining({
+        conversationId: a, contentId: ref.contentId, generation: ref.generation, outcome: 'failed', reason: failure,
+        ...(failure === 'http' ? { status: 503 } : {}),
+      }));
+      expect(f.client.send).not.toHaveBeenCalled();
+    } finally { f.session.close(); log.mockRestore(); }
+  });
 
   it('verifies canonical bodies on non-secure HTTP and rejects a mismatched digest', async () => {
     vi.stubGlobal('crypto', { getRandomValues: webcrypto.getRandomValues.bind(webcrypto) });

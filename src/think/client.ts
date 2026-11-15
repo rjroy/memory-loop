@@ -22,7 +22,10 @@ export type ThinkFormField = ThinkFormFieldBase & (
 export interface ThinkDecision { conversationId: string; decisionId: string; kind: 'form'; title: string; fields: ThinkFormField[] }
 
 export type ThinkClientErrorKind = 'invalid-input' | 'invalid-response' | 'api' | 'transport' | 'aborted';
+export type ContentFailureReason = 'identity' | 'offset' | 'response';
 export class ThinkClientError extends Error {
+  requestId?: string;
+  contentReason?: ContentFailureReason;
   constructor(readonly kind: ThinkClientErrorKind, readonly status?: number, readonly code?: string, readonly delivery?: 'unknown') {
     super('Think request failed');
     this.name = 'ThinkClientError';
@@ -167,7 +170,7 @@ function projectDecision(value: unknown, conversationId: string, expected?: stri
 export function createThinkClient(options: ThinkClientOptions = {}) {
   const fetcher = options.fetch ?? globalThis.fetch.bind(globalThis);
   const openWatch = options.openWatch ?? ((url: string) => new EventSource(url));
-  async function request(path: string, method: 'GET' | 'POST', body?: object, signal?: AbortSignal, limit = 65536): Promise<unknown> {
+  async function request(path: string, method: 'GET' | 'POST', body?: object, signal?: AbortSignal, limit = 65536, correlation?: { requestId?: string }): Promise<unknown> {
     if (signal?.aborted) throw new ThinkClientError('aborted');
     const controller = new AbortController();
     let rejectAbort: ((error: ThinkClientError) => void) | undefined;
@@ -181,6 +184,8 @@ export function createThinkClient(options: ThinkClientOptions = {}) {
         const response = await fetcher(path, { method, signal: controller.signal, credentials: 'same-origin', redirect: 'error',
           headers: method === 'POST' ? { 'content-type': 'application/json' } : undefined,
           ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+        const requestId = response.headers.get('x-memory-loop-request-id');
+        if (correlation && requestId && uuid.test(requestId)) correlation.requestId = requestId;
         const value = await readJSON(response, limit, controller.signal);
         if (!response.ok) {
           const code = object(value) && object(value.error) && typeof value.error.code === 'string' && (isThinkErrorCode(value.error.code) || boundaryErrors.has(value.error.code)) ? value.error.code : undefined;
@@ -194,6 +199,7 @@ export function createThinkClient(options: ThinkClientOptions = {}) {
       if (signal?.aborted) throw new ThinkClientError('aborted', undefined, undefined, method === 'POST' ? 'unknown' : undefined);
       if (error instanceof ThinkClientError) {
         if (method === 'POST' && error.kind === 'invalid-response') throw new ThinkClientError('invalid-response', undefined, undefined, 'unknown');
+        if (correlation?.requestId) error.requestId = correlation.requestId;
         throw error;
       }
       throw new ThinkClientError('transport', undefined, undefined, method === 'POST' ? 'unknown' : undefined);
@@ -250,13 +256,21 @@ export function createThinkClient(options: ThinkClientOptions = {}) {
       if (!integer(through) || !integer(offset) || offset > through || (transfer === undefined && offset !== 0)) throw new ThinkClientError('invalid-input');
       if (transfer !== undefined) identifier(transfer);
       const query = new URLSearchParams({ generation, through: String(through), offset: String(offset), ...(transfer === undefined ? {} : { transfer }) });
-      const value = await request(`${path(conversationId)}/content/${contentId}?${query}`, 'GET', undefined, signal, 131072);
-      if (!object(value) || value.conversationId !== conversationId || value.epoch !== epoch || value.contentId !== contentId || value.generation !== generation || value.through !== through || value.offset !== offset ||
-          typeof value.transfer !== 'string' || !uuid.test(value.transfer) || (transfer !== undefined && transfer !== value.transfer) || typeof value.bytes !== 'string' || value.bytes.length > 87384 ||
-          !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value.bytes) || !integer(value.nextOffset)) throw new ThinkClientError('invalid-response');
+      const correlation: { requestId?: string } = {};
+      const value = await request(`${path(conversationId)}/content/${contentId}?${query}`, 'GET', undefined, signal, 131072, correlation);
+      const invalid = (reason: ContentFailureReason): never => {
+        const error = new ThinkClientError('invalid-response'); error.contentReason = reason; error.requestId = correlation.requestId; throw error;
+      };
+      if (!object(value)) return invalid('response');
+      if (value.conversationId !== conversationId || value.epoch !== epoch || value.contentId !== contentId || value.generation !== generation || value.through !== through ||
+          typeof value.transfer !== 'string' || !uuid.test(value.transfer) || (transfer !== undefined && transfer !== value.transfer)) return invalid('identity');
+      if (value.offset !== offset || !integer(value.nextOffset)) return invalid('offset');
+      if (typeof value.bytes !== 'string' || value.bytes.length > 87384 ||
+          !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value.bytes)) return invalid('response');
       let decoded: string;
-      try { decoded = atob(value.bytes); } catch { throw new ThinkClientError('invalid-response'); }
-      if (btoa(decoded) !== value.bytes || decoded.length > 65536 || value.nextOffset !== offset + decoded.length || value.nextOffset > through || (offset < through && value.nextOffset === offset)) throw new ThinkClientError('invalid-response');
+      try { decoded = atob(value.bytes); } catch { return invalid('response'); }
+      if (btoa(decoded) !== value.bytes || decoded.length > 65536) return invalid('response');
+      if (value.nextOffset !== offset + decoded.length || value.nextOffset > through || (offset < through && value.nextOffset === offset)) return invalid('offset');
       return { conversationId, epoch, contentId, generation, through, offset, bytes: value.bytes, nextOffset: value.nextOffset, transfer: value.transfer };
     },
     watch(conversationId: string, handlers: ThinkWatchHandlers, signal?: AbortSignal): () => void {

@@ -266,6 +266,11 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
       const controller = new AbortController();
       bodyControllers.set(key, controller);
       void (async () => {
+        const ref = item.ref;
+        const identifiers = { ...(uuid.test(item.id) ? { conversationId: item.id } : {}), ...(uuid.test(ref.contentId) ? { contentId: ref.contentId } : {}),
+          ...(uuid.test(ref.generation) ? { generation: ref.generation } : {}), ...(uuid.test(ref.epoch) ? { epoch: ref.epoch } : {}) };
+        console.debug('think_content_load_attempt', { ...identifiers, operation: 'content' });
+        let reason: 'response' | 'identity' | 'offset' | 'digest' | 'decode' = 'response';
         let progress = bodyProgress.get(key);
         if (!progress) {
           progress = { decoder: new TextDecoder('utf-8', { fatal: true }), chunks: [], text: '', offset: 0 };
@@ -273,16 +278,20 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
         }
         try {
           do {
+            reason = 'response';
             const chunk = await client.chunk(item.ref, progress.offset, progress.transfer, controller.signal);
             if (!current(item.id, item.version) || controller.signal.aborted || bodyProgress.get(key) !== progress) return;
+            reason = 'response';
             const binary = atob(chunk.bytes);
             const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
             if (chunk.conversationId !== item.id || chunk.epoch !== item.ref.epoch || chunk.contentId !== item.ref.contentId || chunk.generation !== item.ref.generation ||
-                chunk.through !== item.ref.through || chunk.offset !== progress.offset || (progress.transfer !== undefined && chunk.transfer !== progress.transfer) ||
-                btoa(binary) !== chunk.bytes || bytes.length > 65536 || chunk.nextOffset !== progress.offset + bytes.length || chunk.nextOffset > item.ref.through ||
-                (progress.offset < item.ref.through && !bytes.length)) throw new Error('invalid content chunk');
+                chunk.through !== item.ref.through || (progress.transfer !== undefined && chunk.transfer !== progress.transfer)) { reason = 'identity'; throw new Error('invalid content chunk'); }
+            if (btoa(binary) !== chunk.bytes || bytes.length > 65536) throw new Error('invalid content chunk');
+            if (chunk.offset !== progress.offset || chunk.nextOffset !== progress.offset + bytes.length || chunk.nextOffset > item.ref.through ||
+                (progress.offset < item.ref.through && !bytes.length)) { reason = 'offset'; throw new Error('invalid content chunk'); }
             progress.transfer = chunk.transfer;
             if (item.ref.kind === 'canonical') progress.chunks.push(bytes);
+            reason = 'decode';
             progress.text += progress.decoder.decode(bytes, { stream: true });
             progress.offset = chunk.nextOffset;
           } while (progress.offset < item.ref.through);
@@ -291,17 +300,24 @@ export function createThinkSession(options: ThinkSessionOptions): ThinkSession {
             const bytes = new Uint8Array(item.ref.through);
             let index = 0;
             for (const chunk of progress.chunks) { bytes.set(chunk, index); index += chunk.length; }
+            reason = 'digest';
             if (await sha256Hex(bytes) !== item.ref.sha256) throw new Error('digest mismatch');
           }
           if (!current(item.id, item.version) || controller.signal.aborted || bodyProgress.get(key) !== progress || !state.entries.some(entry => 'body' in entry && keyOf(entry.body) === key)) return;
           bodyProgress.delete(key);
           bodies.set(key, { state: 'ready', ref: item.ref, text });
+          console.debug('think_content_load_outcome', { ...identifiers, operation: 'content', outcome: 'ready' });
           update({});
         } catch (error) {
           // Only an uncertain GET failure is resumable. Expired transfers and
           // malformed content require a fresh, fully validated immutable read.
           if (!(error instanceof ThinkClientError && error.kind === 'transport') && bodyProgress.get(key) === progress) bodyProgress.delete(key);
           if (current(item.id, item.version) && !controller.signal.aborted && state.entries.some(entry => 'body' in entry && keyOf(entry.body) === key)) {
+            const clientError = error instanceof ThinkClientError ? error : undefined;
+            const failure = clientError?.kind === 'transport' ? 'transport' : clientError?.kind === 'api' ? 'http' : clientError?.contentReason ?? reason;
+            console.error('think_content_load_outcome', { ...identifiers, operation: 'content', outcome: 'failed', reason: failure,
+              ...(clientError?.status !== undefined && Number.isInteger(clientError.status) && clientError.status >= 100 && clientError.status <= 599 ? { status: clientError.status } : {}),
+              ...(clientError?.requestId && uuid.test(clientError.requestId) ? { requestId: clientError.requestId } : {}) });
             const previous = bodies.get(key);
             const previousText = previous?.state === 'ready' ? previous.text : previous && 'previousText' in previous ? previous.previousText : undefined;
             bodies.set(key, { state: 'error', ref: item.ref, reason: 'unavailable', ...(previousText === undefined ? {} : { previousText }) });

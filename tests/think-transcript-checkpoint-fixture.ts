@@ -8,9 +8,10 @@ import type { MessageListOutput, OpenCodeEvent, SessionFormGetOutput, SessionPro
 import { createBodyStore } from '../backend/think/body-store';
 import { removeCacheNamespace } from '../backend/think/body-cleanup';
 import { createThinkService, type ConversationSnapshot, type ThinkService } from '../backend/think/service';
-import { openThinkState } from '../backend/think/sqlite-state';
+import { openThinkState, type SQLite } from '../backend/think/sqlite-state';
 import type { NativeSession, NativeSessions } from '../backend/think/native';
-import { transcriptIO, type TranscriptIO } from '../backend/think/transcript-file';
+import { TranscriptNamespace, transcriptIO, type TranscriptIO } from '../backend/think/transcript-file';
+import { RegisteredTranscript } from '../backend/think/transcript-durable';
 import { createTranscriptWriter, type TranscriptRuntime } from '../backend/think/transcript';
 import { ThinkStateError, type ThinkStateStore, type TranscriptStateStore } from '../backend/think/state';
 import type { ProjectionEntry, ThinkContentReader } from '../backend/think/projection';
@@ -35,14 +36,16 @@ export type Scenario = 'synced' | 'synced-form' | 'partial' | 'synced-unconfirme
   'confirm-failed' | 'acquire-failed' | 'confirm-ack-lost' | 'crash-before-confirm' | 'initial-load-failed' | 'unused-load-failed' |
   'completion-publication' | 'completion-close';
 export type ReopenScenario = 'replay' | 'recover' | 'verify-confirmed' | 'legacy' | 'prefix-edit' | 'wrong-tail' |
-  'replacement' | 'symlink' | 'hardlink' | 'directory-moved' | 'missing-chunk' | 'unsealed' | 'wrong-hash' | 'changed-original' | 'changed-original-retry';
+  'replacement' | 'symlink' | 'hardlink' | 'directory-moved' | 'missing-chunk' | 'unsealed' | 'wrong-hash' | 'changed-original' | 'changed-original-retry' |
+  'device-replay' | 'device-recover' | 'device-prefix-edit' | 'device-truncated' | 'device-symlink' | 'device-wrong-tail' |
+  'device-identity-before' | 'device-identity-after' | 'device-append-failure';
 
 export interface Checkpoint {
   conversationId: string; ownerConversationId: string; nativeSessionId: string; vaultDirectory: string;
   noteIdJson: string; creationState: string; fileDev: string | null; fileIno: string | null;
   fileFingerprint: string | null; confirmedOffset: number; confirmedSha256: string;
   pendingEntryId: string | null; pendingLength: number | null; pendingSha256: string | null;
-  pendingState: string | null;
+  pendingState: string | null; namespaceJson: string;
 }
 export interface Probe {
   schemaVersion: number; checkpoint: Checkpoint | null; issue?: string; writerAvailable: boolean;
@@ -99,6 +102,11 @@ export interface ReopenReport {
   pid: number;
   originalBeforeHex: string | null;
   originalAfterHex: string | null;
+  diagnostics: unknown[][];
+  ordinaryDiagnostics: unknown[][];
+  appendFaultInjected: boolean;
+  identityFaultInjected: boolean;
+  identityFaultEvidence?: { method: 'reconcileIdentity'; phase: 'before_commit' | 'after_commit'; triggerFired: boolean; persisted: Probe };
   retry?: { samples: Array<{ elapsedMs: number; callbacks: number; sourceReads: number; health: TranscriptHealth }>;
     revalidated: TranscriptHealth; revalidationReads: number };
 }
@@ -212,7 +220,7 @@ function probe(database: string): Probe {
     try {
       result.checkpoint = db.query<Checkpoint, [string]>(`SELECT t.conversation_id AS conversationId,
         c.conversation_id AS ownerConversationId, c.native_session_id AS nativeSessionId, c.vault_directory AS vaultDirectory,
-        t.note_id_json AS noteIdJson, t.creation_state AS creationState, CAST(t.file_dev AS TEXT) AS fileDev, CAST(t.file_ino AS TEXT) AS fileIno,
+        t.note_id_json AS noteIdJson, t.namespace_json AS namespaceJson, t.creation_state AS creationState, CAST(t.file_dev AS TEXT) AS fileDev, CAST(t.file_ino AS TEXT) AS fileIno,
         t.file_fingerprint AS fileFingerprint, t.confirmed_offset AS confirmedOffset, t.confirmed_sha256 AS confirmedSha256,
         t.pending_entry_id AS pendingEntryId, t.pending_length AS pendingLength, t.pending_sha256 AS pendingSha256,
         t.pending_state AS pendingState
@@ -933,13 +941,29 @@ async function reopen(root: string, mode: ReopenScenario): Promise<ReopenReport>
   const outside = join(root, 'unrelated-sentinel.md');
   await writeFile(outside, 'fixture unrelated bytes 🧠', { mode: 0o600 });
   const watched = [target, outside];
+  if (mode.startsWith('device-')) {
+    // Model a prior mount's device ID in this test-owned SQLite checkpoint while
+    // preserving each inode. All actual filesystem operations remain real.
+    const db = new Database(database, { readwrite: true, create: false });
+    try {
+      const row = db.query<{ namespace_json: string; file_dev: string }, [string]>(
+        'SELECT namespace_json, CAST(file_dev AS TEXT) AS file_dev FROM transcripts WHERE conversation_id = ?').get(conversationId);
+      if (!row) throw new Error('fixture checkpoint absent');
+      const namespace = JSON.parse(row.namespace_json) as Array<{ dev: string; ino: string }>;
+      const previousDevice = (value: string) => (BigInt(value) === 0n ? 1n : BigInt(value) - 1n).toString();
+      db.query('UPDATE transcripts SET namespace_json = ?, file_dev = ? WHERE conversation_id = ?').run(
+        JSON.stringify(namespace.map(node => ({ ...node, dev: previousDevice(node.dev) }))), previousDevice(row.file_dev), conversationId);
+      if (mode === 'device-identity-before') db.exec(`CREATE TRIGGER fixture_identity_interrupt BEFORE UPDATE OF namespace_json, file_dev ON transcripts
+        WHEN OLD.conversation_id = '${conversationId}' BEGIN SELECT RAISE(ABORT, 'fixture interrupt before identity commit'); END`);
+    } finally { db.close(); }
+  }
   const state = await openThinkState(projectRoot, vault);
   const sourceEpoch = randomUUID();
   const bodies = await createBodyStore({ directory: join(root, `reopen-bodies-${randomUUID()}`), epoch: sourceEpoch, vaultDirectory: vault });
   const entries: ProjectionEntry[] = [];
   const oldBodies: ReopenReport['oldBodies'] = [];
   const newBodies: ReopenReport['newBodies'] = [];
-  if (mode === 'replay' || mode === 'changed-original' || mode === 'changed-original-retry') {
+  if (mode === 'replay' || mode === 'device-replay' || mode === 'changed-original' || mode === 'changed-original-retry') {
     // Recorded test-owned source facts, not an implementation of native-history hydration.
     const seed = JSON.parse(await readFile(join(root, 'report.json'), 'utf8')) as Report;
     for (const entry of seed.sourceEntries) {
@@ -954,7 +978,7 @@ async function reopen(root: string, mode: ReopenScenario): Promise<ReopenReport>
         entries.push({ ...entry, body });
       } else entries.push(entry);
     }
-    if (mode === 'replay') entries.push({ kind: 'compaction', sessionId: nativeId, eventId: 'evt_fixture_observed_after_restart',
+    if (mode === 'replay' || mode === 'device-replay') entries.push({ kind: 'compaction', sessionId: nativeId, eventId: 'evt_fixture_observed_after_restart',
       phase: 'ended', sourceTime: now + 1000, sourceSequence: 9, displayOrder: 100 });
   } else if (mode === 'legacy') {
     const command = state.command(sendCommandId);
@@ -964,19 +988,23 @@ async function reopen(root: string, mode: ReopenScenario): Promise<ReopenReport>
     entries.push({ kind: 'original', clientCommandId: sendCommandId, messageId, body, displayOrder: 1, sourceTime: now, runId: command.receipt.runId });
   }
 
-  if (mode === 'prefix-edit') {
+  if (mode === 'prefix-edit' || mode === 'device-prefix-edit') {
     const bytes = await readFile(target);
     const at = bytes.indexOf(Buffer.from('durable fixture original'));
     if (at < 0) throw new Error('fixture confirmed original not present');
     bytes[at] = 88;
     await writeFile(target, bytes);
-  } else if (mode === 'wrong-tail') {
+  } else if (mode === 'wrong-tail' || mode === 'device-wrong-tail') {
     const bytes = await readFile(target);
     const checkpoint = probe(database).checkpoint;
     if (!checkpoint || bytes.length <= checkpoint.confirmedOffset) throw new Error('fixture pending suffix absent');
     bytes[bytes.length - 1] = 88;
     await writeFile(target, bytes);
-  } else if (mode === 'replacement' || mode === 'symlink') {
+  } else if (mode === 'device-truncated') {
+    const checkpoint = probe(database).checkpoint;
+    if (!checkpoint || checkpoint.confirmedOffset < 1) throw new Error('fixture confirmed prefix absent');
+    await truncate(target, checkpoint.confirmedOffset - 1);
+  } else if (mode === 'replacement' || mode === 'symlink' || mode === 'device-symlink') {
     const held = `${target}.owned`;
     await rename(target, held); watched.push(held);
     if (mode === 'replacement') await writeFile(target, await readFile(held), { mode: 0o600 });
@@ -1014,6 +1042,7 @@ async function reopen(root: string, mode: ReopenScenario): Promise<ReopenReport>
   let writeBytes = 0;
   let sourceReads = 0;
   let bodyReads = 0;
+  let appendFaultInjected = false;
   const lockAvailable: boolean[] = [];
   const boundary = () => { lockAvailable.push(probe(database).writerAvailable); };
   const io: TranscriptIO = { ...transcriptIO, async syncDirectory(root, components) {
@@ -1022,23 +1051,94 @@ async function reopen(root: string, mode: ReopenScenario): Promise<ReopenReport>
     boundary();
     const handle = await transcriptIO.open(path, flags, permissions);
     return { fd: handle.fd, stat: () => handle.stat(), read: (...args) => handle.read(...args), close: () => handle.close(),
-      async write(...args) { boundary(); const result = await handle.write(...args); writes++; writeBytes += result.bytesWritten; return result; },
+      async write(...args) {
+        boundary();
+        if (mode === 'device-append-failure' && probe(database).checkpoint?.fileDev !== before.checkpoint?.fileDev) {
+          appendFaultInjected = true;
+          throw Object.assign(new Error('fixture write failure after verified identity recovery'), { code: 'EIO' });
+        }
+        const result = await handle.write(...args); writes++; writeBytes += result.bytesWritten; return result;
+      },
       async sync() { boundary(); await handle.sync(); },
     };
   } };
   let revision = 1;
   const content: ThinkContentReader = {
-    async page() { sourceReads++; if (mode === 'recover') throw new Error('recovery must not require native history or old body cache');
+    async page() { sourceReads++; if (mode === 'recover' || mode === 'device-recover' || mode.startsWith('device-identity-')) throw new Error('recovery must not require native history or old body cache');
       return { conversationId, epoch: sourceEpoch, revision, entries }; },
     async open(ref) { bodyReads++; return bodies.open(ref); },
   };
   const clock = retryClock(now + 5000);
   const runtime: TranscriptRuntime = mode === 'changed-original-retry' ? clock.runtime
     : { now: () => now + 5000, random: () => 0.5, schedule() { return () => {}; } };
-  const writer = createTranscriptWriter(vault, content, () => {}, { state: state.transcripts, io, runtime, warningAfterMs: 60000 });
+  const diagnostics: unknown[][] = [];
+  const ordinaryDiagnostics: unknown[][] = [];
+  const previousInfo = console.info;
+  const previousWarn = console.warn;
+  const previousError = console.error;
+  const checkSafe = (value: unknown): void => {
+    if (value instanceof Error) throw new Error('raw error in identity diagnostic');
+    if (value === null || typeof value !== 'object') return;
+    for (const [key, nested] of Object.entries(value)) {
+      if (/^(?:secret|authorization|password|token|bytes|text|sha256|message|stack|cause|path)$/i.test(key)) throw new Error('sensitive identity diagnostic field');
+      checkSafe(nested);
+    }
+  };
+  const capture = (fallback: typeof console.info) => (...args: unknown[]) => {
+    if (typeof args[0] === 'string' && args[0].startsWith('think_transcript_identity_')) { checkSafe(args); diagnostics.push(args); }
+    else if (args[0] === 'think_transcript_outcome') { checkSafe(args); ordinaryDiagnostics.push(args); }
+    else fallback(...args);
+  };
+  console.info = capture(previousInfo); console.warn = capture(previousWarn); console.error = capture(previousError);
+  let identityFaultInjected = false;
+  let triggerFired = false;
+  let identityFaultEvidence: ReopenReport['identityFaultEvidence'];
+  const durable = state.transcripts;
+  // Capture the test trigger's exact SQLite failure before the production store
+  // sanitizes it. This instruments only this fixture-owned connection.
+  const sqlite = mode === 'device-identity-before' ? (durable as unknown as { db: SQLite }).db : undefined;
+  const originalRun = sqlite?.run;
+  if (sqlite && originalRun) sqlite.run = (sql, ...parameters) => {
+    try { originalRun(sql, ...parameters); }
+    catch (error) {
+      if (/^UPDATE transcripts SET namespace_json\s*=/i.test(sql) && error instanceof Error && error.message.includes('fixture interrupt before identity commit')) triggerFired = true;
+      throw error;
+    }
+  };
+  // Intercept only the identity CAS, never a later pending-entry confirmation.
+  const transcriptState: TranscriptStateStore = mode.startsWith('device-identity-') ? new Proxy(durable, {
+    get(target, property) {
+      const member = Reflect.get(target, property);
+      if (typeof member !== 'function') return member;
+      return (...args: unknown[]) => {
+        if (property !== 'reconcileIdentity') return Reflect.apply(member, target, args) as unknown;
+        const expected = args[0];
+        if (!expected || typeof expected !== 'object' || !('conversationId' in expected) || expected.conversationId !== conversationId) throw new Error('unexpected identity fixture target');
+        let result: unknown;
+        try { result = Reflect.apply(member, target, args); }
+        catch (error) {
+          if (mode === 'device-identity-before' && triggerFired && error instanceof ThinkStateError && error.code === 'unavailable') {
+            identityFaultInjected = true;
+            identityFaultEvidence = { method: 'reconcileIdentity', phase: 'before_commit', triggerFired, persisted: probe(database) };
+          }
+          throw error;
+        }
+        if (mode === 'device-identity-after' && !identityFaultInjected) {
+          const current = durable.load(conversationId, vault);
+          if (current?.file && current.file.dev !== before.checkpoint?.fileDev) {
+            identityFaultInjected = true;
+            identityFaultEvidence = { method: 'reconcileIdentity', phase: 'after_commit', triggerFired: false, persisted: probe(database) };
+            throw new ThinkStateError('unavailable');
+          }
+        }
+        return result;
+      };
+    },
+  }) : durable;
+  const writer = createTranscriptWriter(vault, content, () => {}, { state: transcriptState, io, runtime, warningAfterMs: 60000 });
   try {
     // Ready-pending recovery is startup-owned. Other cases explicitly deliver their fresh source notification.
-    if (mode !== 'recover') writer.changed(conversationId);
+    if (mode !== 'recover' && mode !== 'device-recover' && !mode.startsWith('device-identity-')) writer.changed(conversationId);
     let health = await until(async () => writer.health(conversationId), value => ['up-to-date', 'retrying', 'degraded'].includes(value.state));
     let retry: ReopenReport['retry'];
     if (mode === 'changed-original-retry') {
@@ -1061,13 +1161,67 @@ async function reopen(root: string, mode: ReopenScenario): Promise<ReopenReport>
       retry = { samples, revalidated: health, revalidationReads: sourceReads - reads };
     }
     await writer.close();
+    if (mode === 'device-identity-before') {
+      const db = new Database(database, { readwrite: true, create: false });
+      try { db.exec('DROP TRIGGER fixture_identity_interrupt'); } finally { db.close(); }
+    }
     const preserved = await Promise.all(snapshots.map(async value => ({ ...value, afterHex: (await readFile(value.path)).toString('hex') })));
     return { mode, before, after: probe(database), health, beforeHex: snapshots[0].beforeHex, afterHex: preserved[0].afterHex,
       preserved, oldBodies, newBodies, writes, writeBytes, sourceReads, bodyReads, lockAvailable,
       fileType: lstatSync(target).isSymbolicLink() ? 'symlink' : 'file', pid: process.pid,
       originalBeforeHex: originalBeforeHex ? Buffer.from(originalBeforeHex).toString('hex') : null,
-      originalAfterHex: Buffer.from(state.command(sendCommandId)?.original ?? []).toString('hex'), ...(retry ? { retry } : {}) };
-  } finally { await writer.close(); state.close(); await bodies.close(); }
+      originalAfterHex: Buffer.from(state.command(sendCommandId)?.original ?? []).toString('hex'), diagnostics, ordinaryDiagnostics, appendFaultInjected, identityFaultInjected,
+      ...(identityFaultEvidence ? { identityFaultEvidence } : {}), ...(retry ? { retry } : {}) };
+  } finally {
+    if (sqlite && originalRun) sqlite.run = originalRun;
+    console.info = previousInfo; console.warn = previousWarn; console.error = previousError; await writer.close(); state.close(); await bodies.close();
+  }
+}
+
+async function deviceSiblings(root: string) {
+  const vault = join(root, 'vault');
+  const project = join(root, 'project');
+  const database = join(project, '.memory-loop', 'application.sqlite');
+  const siblingId = '99999999-9999-4999-8999-999999999999';
+  const siblingCommand = '88888888-8888-4888-8888-888888888888';
+  const siblingName = `think-${siblingId}.md`;
+  const siblingPath = join(vault, 'Conversations', 'Memory Loop', siblingName);
+  const state = await openThinkState(project, vault);
+  const namespace = new TranscriptNamespace(vault, 'Conversations/Memory Loop');
+  try {
+    state.registerConversation({ conversationId: siblingId, nativeSessionId: `ses_memoryloop_${siblingId.replaceAll('-', '')}`,
+      directory: vault, owner: { owner: 'memory-loop', conversationId: siblingId, epoch, installationId: state.installationId } },
+    { kind: 'create', conversationId: siblingId, clientCommandId: siblingCommand, epoch, state: 'registered' }, now);
+    const data = Buffer.from('test-owned sibling transcript');
+    const initialSibling = new RegisteredTranscript(state.transcripts, vault, siblingId, namespace);
+    await initialSibling.append({ length: data.length, async *chunks(offset) { yield data.subarray(offset); } }, now, null, () => false);
+    await initialSibling.close();
+    const db = new Database(database, { readwrite: true, create: false });
+    try {
+      for (const id of [conversationId, siblingId]) {
+        const row = db.query<{ namespace_json: string; file_dev: string }, [string]>('SELECT namespace_json, file_dev FROM transcripts WHERE conversation_id = ?').get(id);
+        if (!row) throw new Error('fixture transcript absent');
+        const oldDev = (value: string) => (BigInt(value) === 0n ? 1n : BigInt(value) - 1n).toString();
+        const nodes = JSON.parse(row.namespace_json) as Array<{ dev: string; ino: string }>;
+        db.query('UPDATE transcripts SET namespace_json = ?, file_dev = ? WHERE conversation_id = ?').run(
+          JSON.stringify(nodes.map(node => ({ ...node, dev: oldDev(node.dev) }))), oldDev(row.file_dev), id);
+      }
+    } finally { db.close(); }
+    const beforeFirst = state.transcripts.load(conversationId, vault);
+    const beforeSibling = state.transcripts.load(siblingId, vault);
+    const siblingBefore = (await readFile(siblingPath)).toString('hex');
+    const first = new RegisteredTranscript(state.transcripts, vault, conversationId, namespace);
+    const sibling = new RegisteredTranscript(state.transcripts, vault, siblingId, namespace);
+    const outcome = async (item: RegisteredTranscript) => item.recover(() => false).then(() => 'recovered', () => 'conflict');
+    const firstOutcome = await outcome(first);
+    const afterFirst = state.transcripts.load(conversationId, vault);
+    const siblingAfterFirst = state.transcripts.load(siblingId, vault);
+    const secondOutcome = await outcome(sibling);
+    const afterSibling = state.transcripts.load(siblingId, vault);
+    await first.close(); await sibling.close();
+    return { beforeFirst, beforeSibling, firstOutcome, afterFirst, siblingAfterFirst, secondOutcome, afterSibling,
+      siblingBefore, siblingAfter: (await readFile(siblingPath)).toString('hex') };
+  } finally { await namespace.close(); state.close(); }
 }
 
 const root = process.argv[2];
@@ -1075,14 +1229,17 @@ const selected = process.argv[3];
 const output = process.argv[4];
 if (!root || resolve(root) !== resolve(tmpdir()) || !basename(root).startsWith('think-transcript-checkpoint-') ||
     !output || dirname(resolve(output)) !== resolve(root)) throw new Error('Use a test-owned checkpoint root/report path');
-if (selected === 'cache-native-path' || selected === 'cache-windows-slashes') {
+if (selected === 'device-siblings') {
+  await writeFile(output, JSON.stringify(await deviceSiblings(root)));
+} else if (selected === 'cache-native-path' || selected === 'cache-windows-slashes') {
   await writeFile(output, JSON.stringify(await cacheNativePath(root, selected === 'cache-windows-slashes')));
 } else if (selected === 'reopen-v3-order') {
   await writeFile(output, JSON.stringify(await reopenV3Order(root)));
 } else if (selected?.startsWith('reopen-')) {
   const mode = selected.slice('reopen-'.length);
   const modes: ReopenScenario[] = ['replay', 'recover', 'verify-confirmed', 'legacy', 'prefix-edit', 'wrong-tail',
-    'replacement', 'symlink', 'hardlink', 'directory-moved', 'missing-chunk', 'unsealed', 'wrong-hash', 'changed-original', 'changed-original-retry'];
+    'replacement', 'symlink', 'hardlink', 'directory-moved', 'missing-chunk', 'unsealed', 'wrong-hash', 'changed-original', 'changed-original-retry',
+    'device-replay', 'device-recover', 'device-prefix-edit', 'device-truncated', 'device-symlink', 'device-wrong-tail', 'device-identity-before', 'device-identity-after', 'device-append-failure'];
   if (!modes.includes(mode as ReopenScenario)) throw new Error('Unknown fixture reopen scenario');
   await writeFile(output, JSON.stringify(await reopen(root, mode as ReopenScenario)));
 } else if (selected === 'migrate-v1') {

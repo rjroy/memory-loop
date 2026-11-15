@@ -443,11 +443,21 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
     const { id, contentId } = context.req.param();
     const input = parseContentRequest(id, contentId, new URL(context.req.url).searchParams);
     if (!input) return thinkError('invalid_request');
+    const incomingId = context.req.header('x-memory-loop-request-id');
+    const correlation = { conversationId: id, contentId, generation: input.generation, ...(incomingId && uuid.test(incomingId) ? { requestId: incomingId } : {}) };
     const service = options.think;
-    if (!service) return thinkError('think_config_missing');
-    if ('error' in service) return thinkError(service.error);
+    if (!service || 'error' in service) {
+      const code = service && 'error' in service ? service.error : 'think_config_missing';
+      log('think_content_outcome', { ...correlation, operation: 'content', status: 'unavailable', code });
+      return thinkError(code);
+    }
     try { return context.json(await service.contentChunk(input)); }
-    catch (error: unknown) { return thinkServiceError(error); }
+    catch (error: unknown) {
+      const result = thinkServiceError(error);
+      log('think_content_outcome', { ...correlation, operation: 'content', status: result.status,
+        ...(error instanceof ThinkServiceError ? { code: error.code, category: 'content_service_failure' } : safeError(error, 'content_service_failure')) });
+      return result;
+    }
   });
   app.get(`${thinkBase}/:id/decisions`, async context => {
     const id = context.req.param('id');

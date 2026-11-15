@@ -27,18 +27,22 @@ function Activity({ items, onOpen }: { items: readonly ThinkActivity[]; onOpen?(
 function MessageBody({ part, identity, presentation, fallbackText }: { part: ThinkMessagePart; identity: ThinkKnownIdentity | null; fallbackText?: string } & ThinkPresenterProps) {
   const content = part.content;
   const text = content.state === 'ready' ? content.text : content.previousText ?? fallbackText;
+  const openStatus = part.closure === 'open' && (content.state === 'ready' || content.state === 'replacing');
+  const updating = content.state === 'replacing';
+  const streaming = part.capture === 'complete' && content.state === 'ready';
   return <div className="think-part" data-think-anchor={`part:${part.messageId}:${part.ordinal}`}>
     {text !== undefined && <MarkdownDocument markdown={text} />}
     {content.state === 'unloaded' && identity && <button type="button" className="think-button think-text-button" onClick={() => presentation.actions.retryBody(identity, content.ref)}>Load message</button>}
     {content.state === 'loading' && <p className="think-part-status">Loading message…</p>}
-    {content.state === 'replacing' && <p className="think-part-status">Updating message…</p>}
+    {openStatus ? <p className="think-part-status think-status-row">
+      <span className={`think-stream-mark${streaming ? '' : ' think-status-hidden'}`} aria-hidden="true" />
+      <span className={`think-update-label${updating ? '' : ' think-status-hidden'}`} aria-hidden={!updating}>Updating message…</span>
+    </p> : updating && <p className="think-part-status">Updating message…</p>}
     {content.state === 'error' && <div className="think-part-status">
       <p>{content.reason === 'unsupported' ? 'This message cannot be displayed with the available resources.' : 'This message couldn’t be loaded.'}</p>
       {identity && <button type="button" className="think-button think-text-button" onClick={() => presentation.actions.retryBody(identity, content.ref)}>Retry message</button>}
     </div>}
-    {part.closure === 'open' && part.capture !== 'complete'
-      ? <p className="think-part-status">Partial response · catching up</p>
-      : part.closure === 'open' && content.state === 'ready' && <span className="think-stream-mark" aria-hidden="true" />}
+    {part.closure === 'open' && part.capture !== 'complete' && <p className="think-part-status">Partial response · catching up</p>}
   </div>;
 }
 

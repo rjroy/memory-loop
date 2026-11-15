@@ -827,27 +827,34 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
     const controller = new AbortController();
     const task = Promise.resolve().then(async () => {
       serverLogger.log('think_hydration_attempt', { conversationId });
+      let operation = 'verify_identity';
       try {
         if (!await verifyIdentity(controller)) throw new Error('Native process unavailable');
+        operation = 'readback';
         const session = await nativeCall(controller, 'readback', signal => native.getSession({ sessionID: registered.nativeSessionId }, signal));
         if (!matchesRegistered(session, registered)) throw new Error('Native owner mismatch');
+        operation = 'monitor_connect';
         const monitored = startMonitor();
         if (!await nativeCall(controller, 'monitor-connect', () => monitored.connected) || !monitored.healthy) throw new Error('Monitor unavailable');
         const generation = monitored.generation;
+        operation = 'restore_history';
         const history = await restoreHistory({ conversationId, registry, bodies,
           readPage: cursor => nativeCall(controller, 'history', signal => native.listMessages(cursor
             ? { sessionID: registered.nativeSessionId, cursor, limit: 50 } : { sessionID: registered.nativeSessionId, order: 'asc', limit: 50 }, signal)),
           stopping: () => closed || deleting.has(conversationId) || controller.signal.aborted || identityChanged });
+        operation = 'read_native_state';
         const [current, active, inbox, permissions] = await Promise.all([
           nativeCall(controller, 'status', signal => native.getSession({ sessionID: registered.nativeSessionId }, signal)),
           nativeCall(controller, 'active', signal => native.activeSessions(signal)),
           nativeCall(controller, 'inbox-list', signal => native.listInbox({ sessionID: registered.nativeSessionId }, signal)),
           nativeCall(controller, 'permission-list', signal => native.listPermissionRequests({ location: { directory } }, signal)),
         ]);
+        operation = 'verify_authority';
         if (!matchesRegistered(current, registered) || !await verifyIdentity(controller) || closed || deleting.has(conversationId) || controller.signal.aborted ||
             monitor !== monitored || !monitored.healthy || monitored.generation !== generation) throw new Error('Hydration authority changed');
         const latest = stateOperation(() => registry.conversation(conversationId));
         if (!latest || latest.lifecycle !== 'live' || latest.rowVersion !== registered.rowVersion) throw new Error('Hydration registry changed');
+        operation = 'restore_state';
         persistCanonical(conversationId, history.activities);
         const unresolved = history.commands.filter(command => command.receipt.kind === 'send' && !terminalSend(command.receipt.state));
         if (unresolved.length > 1) throw new Error('Multiple unresolved Send reservations');
@@ -909,9 +916,12 @@ export function createThinkService(options: ThinkServiceOptions): ThinkService {
         setPermissionPending(conversationId, permissions.data.some(permission => permission.sessionID === registered.nativeSessionId));
         requestRefresh(conversationId);
         serverLogger.log('think_hydration_outcome', { conversationId, status: 'ready' });
-      } catch {
+      } catch (error) {
+        // Native deadlines also abort this controller. Suppress only aborts owned
+        // by an explicit shutdown or deletion fence, not ordinary failures.
+        const cancelled = controller.signal.aborted && (closed || deleting.has(conversationId));
         controller.abort();
-        serverLogger.log('think_hydration_outcome', { conversationId, status: 'unavailable' });
+        if (!cancelled) serverLogger.log('think_hydration_outcome', { conversationId, operation, status: 'unavailable', ...safeError(error, 'hydration_failure') });
         throw new ThinkServiceError('think_unavailable');
       }
     });

@@ -194,6 +194,29 @@ async function start() {
   };
 }
 
+it('reports a sanitized cause when native registration startup falls back to registry-only', async () => {
+  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  const registrationFile = join(fixture, 'private-registration-name.json');
+  await writeFile(join(projectRoot, '.memory-loop', 'config.json'), JSON.stringify({ vaultDirectory: vault,
+    think: { service: { registrationFile, requiredVersion: '2.2.2' }, location: { kind: 'vault' }, permissionMode: 'full' } }));
+  const request = await start();
+  expect((await request('/api/vault/tree')).status).toBe(200);
+  const expectSafeDiagnostic = (value: unknown): void => {
+    expect(value).not.toBeInstanceOf(Error);
+    if (value === null || typeof value !== 'object') return;
+    for (const [key, nested] of Object.entries(value)) {
+      expect(key).not.toMatch(/^(?:secret|authorization|password|token|bytes|text|sha256|message|stack|cause)$/i);
+      expectSafeDiagnostic(nested);
+    }
+  };
+  expectSafeDiagnostic(warning.mock.calls);
+  expect(JSON.stringify(warning.mock.calls)).not.toContain(registrationFile);
+  expect(JSON.stringify(warning.mock.calls)).not.toContain(token);
+  expect(warning).toHaveBeenCalledWith('think_setup_outcome', expect.objectContaining({
+    status: 'registry-only', operation: 'read_registration', code: 'ENOENT', category: expect.any(String),
+  }));
+});
+
 it.each([
   ['invalid cron', { questions: { schedule: 'not a cron', count: 3 } }],
   ['invalid time zone', { timeZone: 'Fixture/Not_A_Zone' }],

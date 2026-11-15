@@ -122,6 +122,8 @@ export interface TranscriptStateStore {
   pending(vaultDirectory: string, after?: string): string[];
   intent(conversationId: string, vaultDirectory: string, noteId: string[], createdAt: number, namespace: TranscriptDirectoryIdentity[]): void;
   acquire(conversationId: string, identity: TranscriptFileCheckpoint): void;
+  /** Atomically replace only verified device identities if all durable facts still match. */
+  reconcileIdentity?(expected: StoredTranscript, namespace: TranscriptDirectoryIdentity[], file: TranscriptFileCheckpoint): void;
   entry(conversationId: string, entryId: string): StoredTranscriptEntry | null;
   latest(conversationId: string, semantic: string): StoredTranscriptEntry | null;
   /** SQLite supplies this bounded read; older writer-only adapters need not enumerate facts. */

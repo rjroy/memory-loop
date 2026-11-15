@@ -7,8 +7,9 @@ import { exactFingerprint, fingerprintMatches, parseFileIdValue, sameFileId, sta
 import type { TranscriptDirectoryIdentity, TranscriptFileCheckpoint } from './state';
 
 export type TranscriptFailure = 'io_unavailable' | 'conflict' | 'content_gap' | 'invalid_configuration';
+export type TranscriptConflictDetail = 'unsafe_path' | 'inode_mismatch' | 'size_mismatch' | 'content_mismatch' | 'identity_changed';
 export class TranscriptError extends Error {
-  constructor(readonly reason: TranscriptFailure) { super('Think transcript operation failed'); }
+  constructor(readonly reason: TranscriptFailure, readonly detail?: TranscriptConflictDetail) { super('Think transcript operation failed'); }
 }
 
 /** Narrow native-I/O seam: fault tests can wrap real owned handles, without mocking modules.
@@ -70,7 +71,7 @@ export const transcriptFingerprint = (s: BigIntStats) => exactFingerprint(s, fin
 export const transcriptFingerprintMatches = (s: BigIntStats, persisted: string) => fingerprintMatches(s, persisted, fingerprintsCtime);
 const fingerprint = transcriptFingerprint;
 function code(error: unknown): unknown { return typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined; }
-function conflict(): never { throw new TranscriptError('conflict'); }
+function conflict(detail?: TranscriptConflictDetail): never { throw new TranscriptError('conflict', detail); }
 /** Transcript sizes are byte offsets; only file IDs may exceed the safe-integer range. */
 export function transcriptSize(stat: BigIntStats): number {
   const size = Number(stat.size);
@@ -83,7 +84,7 @@ function fileStat(stat: BigIntStats): void {
 }
 function namespaceFailure(error: unknown): never {
   if (error instanceof SafeEntryError || error instanceof SafeRootChangedError ||
-      ['ENOENT', 'ENOTDIR', 'ELOOP'].includes(String(code(error)))) conflict();
+      ['ENOENT', 'ENOTDIR', 'ELOOP'].includes(String(code(error)))) conflict('unsafe_path');
   throw error;
 }
 
@@ -204,6 +205,10 @@ export interface TranscriptFileOptions {
   /** Only a registry-bound caller supplies this; filenames/frontmatter never establish ownership. */
   checkpoint?: TranscriptFileCheckpoint;
   acquired?(checkpoint: TranscriptFileCheckpoint): void;
+  /** Called synchronously after verifying a restored identity, before any append. */
+  reconcile?(checkpoint: TranscriptFileCheckpoint): void;
+  namespaceChanged?: boolean;
+  deviceChanged?(): void;
 }
 
 /** A living writer or a verified registry checkpoint; never filename-based adoption. */
@@ -217,10 +222,12 @@ export class OwnedTranscriptFile {
   private confirmedHash = createHash('sha256');
   private verifiedHash = createHash('sha256');
   private restoredDigest?: string;
+  private namespaceChanged: boolean;
   private pending?: TranscriptBytes;
   private lastConfirmed?: TranscriptBytes;
   private readonly checkpointBytes: TranscriptBytes = { length: 0, async *chunks() {} };
   constructor(private readonly namespace: TranscriptNamespace, private readonly name: string, private readonly options: TranscriptFileOptions = {}) {
+    this.namespaceChanged = options.namespaceChanged ?? false;
     const checkpoint = options.checkpoint;
     if (checkpoint) {
       const dev = parseFileIdValue(checkpoint.dev); const ino = parseFileIdValue(checkpoint.ino);
@@ -262,13 +269,13 @@ export class OwnedTranscriptFile {
     if (this.rejected === observed) conflict();
     try {
       const size = transcriptSize(before);
-      if (size < this.confirmed || size > this.confirmed + source.length) conflict();
+      if (size < this.confirmed || size > this.confirmed + source.length) conflict('size_mismatch');
       const hash = createHash('sha256');
       for (let at = 0; at < this.confirmed; at += 65536) {
         if (stopping()) throw new TranscriptError('io_unavailable');
         hash.update(await this.read(handle, at, Math.min(65536, this.confirmed - at)));
       }
-      if (hash.copy().digest('hex') !== (this.restoredDigest ?? this.confirmedHash.copy().digest('hex'))) conflict();
+      if (hash.copy().digest('hex') !== (this.restoredDigest ?? this.confirmedHash.copy().digest('hex'))) conflict('content_mismatch');
       const confirmedHash = hash.copy();
       const tail = size - this.confirmed;
       let compared = 0;
@@ -277,7 +284,7 @@ export class OwnedTranscriptFile {
         const size = Math.min(bytes.length, tail - compared);
         if (!size) break;
         const actual = await this.read(handle, this.confirmed + compared, size);
-        if (!Buffer.from(actual).equals(Buffer.from(bytes.subarray(0, size)))) conflict();
+        if (!Buffer.from(actual).equals(Buffer.from(bytes.subarray(0, size)))) conflict('content_mismatch');
         hash.update(actual); compared += size;
         if (compared === tail) break;
       }
@@ -303,6 +310,9 @@ export class OwnedTranscriptFile {
     if (stopping()) throw new TranscriptError('io_unavailable');
     await this.namespace.prepare(!this.created);
     let handle: TranscriptHandle | undefined;
+    let identityChanged = false;
+    let reconciled = false;
+    const previousIdentity = this.identity;
     try {
       const path = this.namespace.path(this.name);
       if (!this.created) {
@@ -324,7 +334,11 @@ export class OwnedTranscriptFile {
         try {
           const named = await this.namespace.io.lstat(await this.namespace.resolve(this.name, 'file'));
           fileStat(named);
-          if (!sameIdentity(named, this.identity)) conflict();
+          if (!sameIdentity(named, this.identity)) {
+            if (this.restoredDigest === undefined || this.confirmed === 0 || String(named.ino) !== this.identity.ino || String(named.dev) === this.identity.dev) conflict('inode_mismatch');
+            this.identity = identityOf(named); identityChanged = true;
+            this.options.deviceChanged?.();
+          }
           handle = await this.namespace.io.open(path, fileFlags);
         }
         catch (error) { if (['ENOENT', 'ELOOP', 'ENOTDIR'].includes(String(code(error)))) conflict(); throw error; }
@@ -338,6 +352,13 @@ export class OwnedTranscriptFile {
         return;
       }
       if (this.restoredDigest !== undefined || fingerprint(before) !== this.expected || transcriptSize(before) !== this.verified) await this.verifyChanged(handle, before, source, stopping);
+      if (identityChanged || this.namespaceChanged) {
+        if (this.confirmed === 0) conflict('content_mismatch');
+        if (stopping()) throw new TranscriptError('io_unavailable');
+        if (fingerprint(await this.stat(handle)) !== this.expected) conflict('identity_changed');
+        this.options.reconcile?.(this.confirmedCheckpoint());
+        reconciled = true; this.namespaceChanged = false;
+      }
       for await (const bytes of source.chunks(this.verified - this.confirmed)) {
         if (bytes.length > 65536) throw new TranscriptError('content_gap');
         for (let offset = 0; offset < bytes.length;) {
@@ -360,6 +381,13 @@ export class OwnedTranscriptFile {
       await this.namespace.sync();
       if (fingerprint(await this.stat(handle)) !== this.expected) conflict();
       this.confirmed = this.verified; this.confirmedHash = this.verifiedHash.copy(); this.pending = undefined; this.lastConfirmed = source;
-    } finally { await handle?.close(); }
+    } finally {
+      if (identityChanged && !reconciled && this.options.checkpoint) {
+        this.identity = previousIdentity; this.expected = this.options.checkpoint.fingerprint;
+        this.restoredDigest = this.options.checkpoint.sha256; this.verified = 0;
+        this.confirmedHash = createHash('sha256'); this.verifiedHash = createHash('sha256');
+      }
+      await handle?.close();
+    }
   }
 }

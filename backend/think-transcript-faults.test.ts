@@ -18,6 +18,56 @@ const bytes = (text: string): TranscriptBytes => {
 };
 const running = () => false;
 
+it('does not use an empty confirmed prefix as proof of ownership after a device change', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'think-transcript-empty-device-'));
+  const first = new TranscriptNamespace(root, 'Conversations/Memory Loop');
+  let second: TranscriptNamespace | undefined;
+  try {
+    const initial = new OwnedTranscriptFile(first, filename);
+    await initial.append(bytes(''), running);
+    const checkpoint = initial.confirmedCheckpoint();
+    expect(checkpoint.offset).toBe(0);
+    await first.close();
+    second = new TranscriptNamespace(root, 'Conversations/Memory Loop');
+    const recovered = new OwnedTranscriptFile(second, filename, { checkpoint: { ...checkpoint,
+      dev: (BigInt(checkpoint.dev) === 0n ? 1n : BigInt(checkpoint.dev) - 1n).toString() } });
+    await expect(recovered.append(bytes('must not be appended'), running)).rejects.toMatchObject({ reason: 'conflict' });
+    expect(await readFile(join(root, 'Conversations', 'Memory Loop', filename), 'utf8')).toBe('');
+  } finally { await first.close(); await second?.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+it('device recovery fences a path replacement during checkpoint prefix verification', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'think-transcript-device-race-'));
+  const target = join(root, 'Conversations', 'Memory Loop', filename);
+  const held = `${target}.held`;
+  const original = 'fixture verified prefix';
+  const first = new TranscriptNamespace(root, 'Conversations/Memory Loop');
+  let second: TranscriptNamespace | undefined;
+  try {
+    const initial = new OwnedTranscriptFile(first, filename);
+    await initial.append(bytes(original), running);
+    const checkpoint = initial.confirmedCheckpoint();
+    await first.close();
+    let reads = 0;
+    const io: TranscriptIO = { ...transcriptIO, async open(path, flags, mode) {
+      const handle = await transcriptIO.open(path, flags, mode);
+      return { fd: handle.fd, stat: () => handle.stat(), write: (...args) => handle.write(...args), sync: () => handle.sync(), close: () => handle.close(),
+        async read(...args) {
+          const result = await handle.read(...args);
+          if (++reads === 1) { await rename(target, held); await writeFile(target, original); }
+          return result;
+        } };
+    } };
+    second = new TranscriptNamespace(root, 'Conversations/Memory Loop', io);
+    const recovered = new OwnedTranscriptFile(second, filename, { checkpoint: { ...checkpoint,
+      dev: (BigInt(checkpoint.dev) === 0n ? 1n : BigInt(checkpoint.dev) - 1n).toString() } });
+    await expect(recovered.append(bytes(' must not append'), running)).rejects.toMatchObject({ reason: 'conflict' });
+    expect(reads, 'test must reach prefix verification before replacing the path').toBeGreaterThan(0);
+    expect(await readFile(target, 'utf8')).toBe(original);
+    expect(await readFile(held, 'utf8')).toBe(original);
+  } finally { await first.close(); await second?.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 it('verifies and removes an owned transcript using read-only file access', async () => {
   const root = await mkdtemp(join(tmpdir(), 'think-transcript-read-delete-'));
   const namespace = new TranscriptNamespace(root, 'Conversations/Memory Loop');

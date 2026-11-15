@@ -52,6 +52,10 @@
 .think-part-status { margin: .5rem 0; }
 .think-part-status p { margin: 0; }
 .think-stream-mark { display: inline-block; width: .375rem; height: .8em; margin-left: .125rem; background: var(--horizon); }
+.think-status-row { display: flex; flex-wrap: wrap; align-items: baseline; }
+.think-status-row .think-stream-mark { flex: none; }
+.think-update-label { min-width: 0; }
+.think-status-hidden { visibility: hidden; }
 .think-message .markdown-document p { margin-bottom: 1em; }
 .think-message .markdown-document > :last-child { margin-bottom: 0; }
 .think-message .markdown-document .markdown-h1 { font-size: 1.5rem; }

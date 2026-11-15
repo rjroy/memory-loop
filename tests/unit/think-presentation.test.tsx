@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import ThinkView from '../../src/views/ThinkView';
-import type { ThinkPresentation, ThinkPresentationActions, ThinkPresentationState } from '../../src/think/types';
+import type { ThinkMessagePart, ThinkPresentation, ThinkPresentationActions, ThinkPresentationState } from '../../src/think/types';
 import type { BodyRef } from '../../backend/think/body-store';
 import { TestPresentation } from './fixtures/presentation';
 
@@ -112,6 +112,47 @@ describe('Think presentation contract', () => {
     expect(container.querySelector('img[src^="https://example.test"]')).toBeNull();
     expect(screen.queryByRole('button', { name: /retry logging/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/connected|saving|you can draft|keyboard hint/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps the updating label and stream mark semantically correct across preview replacement', () => {
+    const part: ThinkMessagePart = { messageId: 'msg_ai', ordinal: 0, closure: 'open', capture: 'complete', content: { state: 'ready', ref, text: 'Retained response' } };
+    const presentationFor = (value: ThinkMessagePart) => fixture({ messages: [{ role: 'assistant', messageId: 'msg_ai', displayOrder: 1, activity: [], parts: [value] }] }).presentation;
+    const { container, rerender } = show(presentationFor(part));
+    const label = screen.getByText('Updating message…');
+    const mark = container.querySelector('.think-stream-mark');
+    expect(label).toHaveAttribute('aria-hidden', 'true');
+    expect(label).toHaveClass('think-status-hidden');
+    expect(mark).toHaveAttribute('aria-hidden', 'true');
+    expect(mark).not.toHaveClass('think-status-hidden');
+    rerender(<TestPresentation><ThinkView presentation={presentationFor({ ...part, content: { state: 'replacing', ref, previousText: 'Retained response' } })} /></TestPresentation>);
+    expect(screen.getByText('Retained response')).toBeInTheDocument();
+    expect(screen.getByText('Updating message…')).not.toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getByText('Updating message…')).not.toHaveClass('think-status-hidden');
+    expect(container.querySelector('.think-stream-mark')).toHaveClass('think-status-hidden');
+  });
+
+  it('retains independent partial, closed replacement, loading and error semantics', () => {
+    const part: ThinkMessagePart = { messageId: 'msg_ai', ordinal: 0, closure: 'open', capture: 'incomplete', content: { state: 'ready', ref, text: 'Retained response' } };
+    const { actions } = fixture();
+    const presentationFor = (value: ThinkMessagePart): ThinkPresentation => ({ state: fixture({ messages: [{ role: 'assistant', messageId: 'msg_ai', displayOrder: 1, activity: [], parts: [value] }] }).presentation.state, actions });
+    const { container, rerender } = show(presentationFor(part));
+    expect(screen.getByText('Partial response · catching up')).toBeInTheDocument();
+    expect(container.querySelector('.think-stream-mark')).toHaveClass('think-status-hidden');
+    rerender(<TestPresentation><ThinkView presentation={presentationFor({ ...part, content: { state: 'replacing', ref, previousText: 'Retained response' } })} /></TestPresentation>);
+    expect(screen.getByText('Partial response · catching up')).toBeInTheDocument();
+    expect(screen.getByText('Updating message…')).not.toHaveAttribute('aria-hidden', 'true');
+    rerender(<TestPresentation><ThinkView presentation={presentationFor({ ...part, closure: 'closed', content: { state: 'replacing', ref, previousText: 'Retained response' } })} /></TestPresentation>);
+    expect(screen.getByText('Updating message…')).toBeInTheDocument();
+    expect(screen.queryByText('Partial response · catching up')).not.toBeInTheDocument();
+    expect(container.querySelector('.think-stream-mark')).toBeNull();
+    rerender(<TestPresentation><ThinkView presentation={presentationFor({ ...part, content: { state: 'loading', ref } })} /></TestPresentation>);
+    expect(screen.getByText('Loading message…')).toBeInTheDocument();
+    expect(container.querySelector('.think-status-row')).toBeNull();
+    rerender(<TestPresentation><ThinkView presentation={presentationFor({ ...part, content: { state: 'error', ref, previousText: 'Retained response', reason: 'unavailable' } })} /></TestPresentation>);
+    expect(screen.getByText('Retained response')).toBeInTheDocument();
+    expect(screen.getByText('This message couldn’t be loaded.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry message' }));
+    expect(actions.retryBody).toHaveBeenCalledWith(identity, ref);
   });
 
   it('keeps Latest outside composer layout and preserves draft focus until explicit keyboard activation', async () => {
